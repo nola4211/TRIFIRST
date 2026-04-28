@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+python-dotenv
+requests
+sqlite3  # built-in
+httpx
