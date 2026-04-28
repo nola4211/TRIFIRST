@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from trifirst.config import APP_NAME, DATABASE_PATH, STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET
 from trifirst.database.db import get_connection
+from trifirst.coach.ai_coach import chat
 from trifirst.integrations.strava import (
     authorize_url,
     exchange_token,
@@ -37,6 +38,13 @@ class CheckinRequest(BaseModel):
     energy: int
     life_stress: int
     notes: str | None = None
+
+
+class ChatRequest(BaseModel):
+    """Request body for AI coaching chat."""
+
+    user_id: int
+    message: str
 
 
 @router.get("/health")
@@ -127,3 +135,15 @@ def save_checkin(payload: CheckinRequest) -> dict[str, str]:
         connection.commit()
 
     return {"message": "Check-in saved"}
+
+
+@router.post("/coach/chat")
+def coach_chat(payload: ChatRequest) -> dict[str, str]:
+    """Generate a coaching response for a user chat message."""
+    try:
+        with get_connection() as connection:
+            response_text = chat(payload.user_id, payload.message, connection)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unable to generate coach response") from exc
+
+    return {"response": response_text}
