@@ -1,13 +1,30 @@
-"""Application entry point for starting TriFirst and initializing resources."""
+"""Application entry point for running the TriFirst FastAPI app."""
 
-from database.db import init_db
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+
+from trifirst.api.routes import router
+from trifirst.database.db import init_db
+
+app = FastAPI(title="TriFirst API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(router)
 
 
-def main() -> None:
-    """Initialize the database and start the TriFirst application."""
+@app.on_event("startup")
+def on_startup() -> None:
+    """Initialize database schema at application startup."""
     init_db()
-    print("TriFirst is running")
 
 
 if __name__ == "__main__":
-    main()
+    uvicorn.run("trifirst.main:app", host="0.0.0.0", port=8000)
