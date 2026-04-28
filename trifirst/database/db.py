@@ -3,7 +3,7 @@
 import sqlite3
 from pathlib import Path
 
-from config import DATABASE_PATH
+from trifirst.config import DATABASE_PATH
 
 
 def get_connection() -> sqlite3.Connection:
