@@ -180,7 +180,7 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     messages.append({"role": "user", "content": message})
 
     client = Groq(api_key=GROQ_API_KEY)
-    completion = client.chat.completions.create(model="llama3-70b-8192", messages=messages)
+    completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages)
     assistant_text = completion.choices[0].message.content or ""
 
     db_conn.execute(

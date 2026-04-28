@@ -140,10 +140,6 @@ def save_checkin(payload: CheckinRequest) -> dict[str, str]:
 @router.post("/coach/chat")
 def coach_chat(payload: ChatRequest) -> dict[str, str]:
     """Generate a coaching response for a user chat message."""
-    try:
-        with get_connection() as connection:
-            response_text = chat(payload.user_id, payload.message, connection)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail="Unable to generate coach response") from exc
-
+    with get_connection() as connection:
+        response_text = chat(payload.user_id, payload.message, connection)
     return {"response": response_text}
