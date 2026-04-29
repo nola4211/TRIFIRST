@@ -47,6 +47,26 @@ class ChatRequest(BaseModel):
     message: str
 
 
+class RaceGoalRequest(BaseModel):
+    """Request body for saving a race goal."""
+
+    user_id: int
+    race_name: str
+    race_date: str
+    race_distance: str
+    goal_finish_time: str | None = None
+
+
+class FitnessBackgroundRequest(BaseModel):
+    """Request body for saving fitness background."""
+
+    user_id: int
+    swim_level: str
+    bike_level: str
+    run_level: str
+    weekly_hours_available: float
+
+
 @router.get("/health")
 def health_check() -> dict[str, str]:
     """Return a health status response."""
@@ -143,3 +163,85 @@ def coach_chat(payload: ChatRequest) -> dict[str, str]:
     with get_connection() as connection:
         response_text = chat(payload.user_id, payload.message, connection)
     return {"response": response_text}
+
+
+@router.post("/race-goal")
+def save_race_goal(payload: RaceGoalRequest) -> dict[str, str]:
+    """Save a race goal for a user."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO race_goals (user_id, race_name, race_date, race_distance, goal_finish_time)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                payload.user_id,
+                payload.race_name,
+                payload.race_date,
+                payload.race_distance,
+                payload.goal_finish_time,
+            ),
+        )
+        connection.commit()
+    return {"message": "Race goal saved"}
+
+
+@router.post("/fitness-background")
+def save_fitness_background(payload: FitnessBackgroundRequest) -> dict[str, str]:
+    """Save fitness background for a user."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO fitness_background (
+                user_id,
+                swim_level,
+                bike_level,
+                run_level,
+                weekly_hours_available
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                payload.user_id,
+                payload.swim_level,
+                payload.bike_level,
+                payload.run_level,
+                payload.weekly_hours_available,
+            ),
+        )
+        connection.commit()
+    return {"message": "Fitness background saved"}
+
+
+@router.get("/race-goal/{user_id}")
+def get_race_goal(user_id: int) -> dict[str, object] | None:
+    """Return most recent race goal for a user."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT user_id, race_name, race_date, race_distance, goal_finish_time
+            FROM race_goals
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+@router.get("/fitness-background/{user_id}")
+def get_fitness_background(user_id: int) -> dict[str, object] | None:
+    """Return most recent fitness background for a user."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT user_id, swim_level, bike_level, run_level, weekly_hours_available
+            FROM fitness_background
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
