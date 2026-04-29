@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pandas as pd
 import plotly.express as px
@@ -32,6 +32,119 @@ def api_get(path: str):
 # Section 1 — Header
 st.title("🏊🚴🏃 TriFirst")
 st.caption("Your personal Ironman training companion")
+
+with st.expander("⚙️ My Profile", expanded=False):
+    race_goal_payload = api_get(f"/race-goal/{USER_ID}")
+    fitness_payload = api_get(f"/fitness-background/{USER_ID}")
+
+    race_distance_options = {
+        "Sprint": "sprint",
+        "Olympic": "olympic",
+        "70.3": "70.3",
+        "Full Ironman": "full",
+    }
+    db_to_race_label = {value: label for label, value in race_distance_options.items()}
+
+    level_options = {
+        "Never swum": "none",
+        "Beginner": "beginner",
+        "Intermediate": "intermediate",
+    }
+    db_to_level_label = {value: label for label, value in level_options.items()}
+
+    st.subheader("🏁 My Race Goal")
+    default_race_date = date.today() + timedelta(days=180)
+    existing_race = race_goal_payload if isinstance(race_goal_payload, dict) else {}
+    existing_race_date = existing_race.get("race_date")
+    try:
+        loaded_race_date = date.fromisoformat(existing_race_date) if existing_race_date else default_race_date
+    except ValueError:
+        loaded_race_date = default_race_date
+    race_label_default = db_to_race_label.get(existing_race.get("race_distance"), "Sprint")
+
+    with st.form("race_goal_form"):
+        race_name = st.text_input("Race name", value=existing_race.get("race_name", ""))
+        race_date = st.date_input("Race date", value=loaded_race_date)
+        race_distance_label = st.selectbox(
+            "Race distance",
+            options=list(race_distance_options.keys()),
+            index=list(race_distance_options.keys()).index(race_label_default),
+        )
+        goal_finish_time = st.text_input(
+            "Goal finish time (optional)",
+            value=existing_race.get("goal_finish_time") or "",
+            placeholder="12:00:00",
+        )
+        save_race_goal = st.form_submit_button("Save race goal")
+
+        if save_race_goal:
+            try:
+                response = requests.post(
+                    f"{API_BASE_URL}/race-goal",
+                    json={
+                        "user_id": USER_ID,
+                        "race_name": race_name,
+                        "race_date": race_date.isoformat(),
+                        "race_distance": race_distance_options[race_distance_label],
+                        "goal_finish_time": goal_finish_time or None,
+                    },
+                    timeout=15,
+                )
+                response.raise_for_status()
+                st.success("Race goal saved")
+                days_until_race = (race_date - date.today()).days
+                st.info(f"{days_until_race} days until race day 🏁")
+            except requests.RequestException as exc:
+                st.error(f"Could not save race goal: {exc}")
+
+    st.subheader("💪 My Fitness Background")
+    existing_fitness = fitness_payload if isinstance(fitness_payload, dict) else {}
+    swim_default = db_to_level_label.get(existing_fitness.get("swim_level"), "Never swum")
+    bike_default = db_to_level_label.get(existing_fitness.get("bike_level"), "Never swum")
+    run_default = db_to_level_label.get(existing_fitness.get("run_level"), "Never swum")
+
+    with st.form("fitness_background_form"):
+        swim_level = st.selectbox(
+            "Swim level",
+            options=list(level_options.keys()),
+            index=list(level_options.keys()).index(swim_default),
+        )
+        bike_level = st.selectbox(
+            "Bike level",
+            options=list(level_options.keys()),
+            index=list(level_options.keys()).index(bike_default),
+        )
+        run_level = st.selectbox(
+            "Run level",
+            options=list(level_options.keys()),
+            index=list(level_options.keys()).index(run_default),
+        )
+        weekly_hours_available = st.number_input(
+            "Weekly hours available",
+            min_value=0.0,
+            max_value=20.0,
+            value=float(existing_fitness.get("weekly_hours_available") or 0.0),
+            step=0.5,
+        )
+        save_fitness_background = st.form_submit_button("Save fitness background")
+
+        if save_fitness_background:
+            try:
+                response = requests.post(
+                    f"{API_BASE_URL}/fitness-background",
+                    json={
+                        "user_id": USER_ID,
+                        "swim_level": level_options[swim_level],
+                        "bike_level": level_options[bike_level],
+                        "run_level": level_options[run_level],
+                        "weekly_hours_available": weekly_hours_available,
+                    },
+                    timeout=15,
+                )
+                response.raise_for_status()
+                st.success("Fitness background saved")
+            except requests.RequestException as exc:
+                st.error(f"Could not save fitness background: {exc}")
 
 # Fetch core data once for page sections
 activities_payload = api_get(f"/activities/{USER_ID}")
