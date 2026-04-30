@@ -174,15 +174,12 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
         "You understand common race formats and distances: Sprint, Olympic, 70.3 (Half Ironman), and Full Ironman. "
         "Prioritize consistency over intensity for beginners and recommend safe, sustainable progress. "
         "Always tailor advice to the athlete's fitness background, recent training, and race timeline in the context above. "
-<<<<<<< HEAD
         "Keep each response concise and actionable, with a maximum of 3 to 4 sentences unless the athlete asks for more detail. "
         "Always address the athlete directly using 'you' and 'your' — never refer to them in the third person (never say 'Ford should' or 'the athlete needs'). "
         "Speak like a real coach talking directly to their athlete in a one-on-one session. "
         "Be specific, direct, and encouraging. Reference their actual numbers when relevant — exact distances, times, and patterns you notice in their data. "
         "If they haven't logged much data yet, ask them questions to learn more about how they're feeling. "
         "Occasionally ask a follow-up question to keep the conversation going and learn more about the athlete."
-=======
->>>>>>> 48b0037d67db9292aebdec142c9f488a1b3dc3c9
     )
 
         # Conversation history is previous messages; we include it so replies stay consistent and contextual.
