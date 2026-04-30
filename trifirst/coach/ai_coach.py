@@ -10,6 +10,7 @@ from groq import Groq
 from trifirst.config import GROQ_API_KEY
 
 
+# Build a plain-text summary of the user's profile and training so the AI can give personalized advice.
 def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
     """Build a formatted training-context summary for a user from persisted data.
 
@@ -160,8 +161,10 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
         (user_id,),
     ).fetchall()
 
+        # We build user context so the AI answers based on this athlete's real data, not generic advice.
     user_context = build_user_context(user_id, db_conn)
 
+        # The system prompt is the main instruction that sets the AI's role, tone, and safety rules.
     system_prompt = (
         "Athlete context:\n"
         f"{user_context}\n\n"
@@ -175,11 +178,13 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
         "Use the athlete's actual name occasionally to make responses personal and supportive."
     )
 
+        # Conversation history is previous messages; we include it so replies stay consistent and contextual.
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend({"role": row["role"], "content": row["message"]} for row in history_rows)
     messages.append({"role": "user", "content": message})
 
     client = Groq(api_key=GROQ_API_KEY)
+        # This calls the Groq API to generate the assistant's next message from our prompt + history.
     completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages)
     assistant_text = completion.choices[0].message.content or ""
 
