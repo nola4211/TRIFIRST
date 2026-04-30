@@ -199,3 +199,146 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     db_conn.commit()
 
     return assistant_text
+
+
+def _most_recent_completed_week_window(today_utc: datetime | None = None) -> tuple[str, str]:
+    """Return ISO dates for the most recent completed Monday-Sunday week."""
+    now_utc = today_utc or datetime.now(timezone.utc)
+    this_monday = (now_utc - timedelta(days=now_utc.weekday())).date()
+    week_start = this_monday - timedelta(days=7)
+    week_end = week_start + timedelta(days=6)
+    return week_start.isoformat(), week_end.isoformat()
+
+
+def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
+    """Generate and persist an AI weekly digest for the most recent completed week."""
+    week_start, week_end = _most_recent_completed_week_window()
+
+    user_row = db_conn.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    athlete_name = user_row["name"] if user_row and user_row["name"] else "Athlete"
+
+    discipline_rows = db_conn.execute(
+        """
+        SELECT
+            activity_type,
+            COALESCE(SUM(distance_km), 0) AS total_km,
+            COALESCE(SUM(duration_mins), 0) / 60.0 AS total_hours,
+            COUNT(*) AS session_count
+        FROM activities
+        WHERE user_id = ? AND date BETWEEN ? AND ?
+        GROUP BY activity_type
+        """,
+        (user_id, week_start, week_end),
+    ).fetchall()
+
+    by_discipline = {
+        row["activity_type"]: {
+            "total_km": float(row["total_km"] or 0),
+            "total_hours": float(row["total_hours"] or 0),
+            "session_count": int(row["session_count"] or 0),
+        }
+        for row in discipline_rows
+    }
+
+    swim_km = by_discipline.get("swim", {}).get("total_km", 0.0)
+    bike_km = by_discipline.get("bike", {}).get("total_km", 0.0)
+    run_km = by_discipline.get("run", {}).get("total_km", 0.0)
+    total_hours = sum(item["total_hours"] for item in by_discipline.values())
+    total_sessions = sum(item["session_count"] for item in by_discipline.values())
+
+    checkin_row = db_conn.execute(
+        """
+        SELECT
+            AVG(sleep_quality) AS avg_sleep_quality,
+            AVG(energy) AS avg_energy,
+            AVG(soreness) AS avg_soreness,
+            AVG(life_stress) AS avg_life_stress
+        FROM daily_checkins
+        WHERE user_id = ? AND date BETWEEN ? AND ?
+        """,
+        (user_id, week_start, week_end),
+    ).fetchone()
+
+    race_goal_row = db_conn.execute(
+        """
+        SELECT race_name, race_date, race_distance
+        FROM race_goals
+        WHERE user_id = ?
+        ORDER BY race_date ASC, id DESC
+        LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+
+    days_until_race = None
+    if race_goal_row and race_goal_row["race_date"]:
+        race_date = datetime.fromisoformat(race_goal_row["race_date"]).date()
+        days_until_race = (race_date - datetime.now(timezone.utc).date()).days
+
+    summary = {
+        "athlete_name": athlete_name,
+        "week_start_date": week_start,
+        "week_end_date": week_end,
+        "activities": {
+            "swim": by_discipline.get("swim", {"total_km": 0.0, "total_hours": 0.0, "session_count": 0}),
+            "bike": by_discipline.get("bike", {"total_km": 0.0, "total_hours": 0.0, "session_count": 0}),
+            "run": by_discipline.get("run", {"total_km": 0.0, "total_hours": 0.0, "session_count": 0}),
+            "total_hours": total_hours,
+            "total_sessions": total_sessions,
+        },
+        "checkins": {
+            "avg_sleep_quality": float(checkin_row["avg_sleep_quality"]) if checkin_row and checkin_row["avg_sleep_quality"] is not None else None,
+            "avg_energy": float(checkin_row["avg_energy"]) if checkin_row and checkin_row["avg_energy"] is not None else None,
+            "avg_soreness": float(checkin_row["avg_soreness"]) if checkin_row and checkin_row["avg_soreness"] is not None else None,
+            "avg_life_stress": float(checkin_row["avg_life_stress"]) if checkin_row and checkin_row["avg_life_stress"] is not None else None,
+        },
+        "race_goal": {
+            "race_name": race_goal_row["race_name"] if race_goal_row else None,
+            "race_date": race_goal_row["race_date"] if race_goal_row else None,
+            "race_distance": race_goal_row["race_distance"] if race_goal_row else None,
+            "days_remaining": days_until_race,
+        },
+    }
+
+    system_prompt = (
+        "You are Coach Tri writing a weekly training recap. "
+        "Be encouraging and specific, using actual values from the provided summary data. "
+        "Structure your response with exactly these 3 short sections and headings: "
+        "1) This Week, 2) What's Working, 3) Focus for Next Week. "
+        "In 'This Week', describe what the athlete did in 2-3 sentences. "
+        "In 'What's Working', give one positive observation. "
+        "In 'Focus for Next Week', give one specific actionable recommendation. "
+        "Use the athlete's name naturally. Keep the total response under 150 words. "
+        "If no activities were logged, stay encouraging and focus on a clear next-week recommendation."
+    )
+
+    user_prompt = f"Weekly summary data:\n{summary}"
+
+    client = Groq(api_key=GROQ_API_KEY)
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
+    ai_summary_text = (completion.choices[0].message.content or "").strip()
+
+    db_conn.execute(
+        """
+        INSERT INTO weekly_summaries (
+            user_id,
+            week_start_date,
+            total_swim_km,
+            total_bike_km,
+            total_run_km,
+            total_hours,
+            ai_summary_text
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, week_start, swim_km, bike_km, run_km, total_hours, ai_summary_text),
+    )
+    db_conn.commit()
+
+    return ai_summary_text
