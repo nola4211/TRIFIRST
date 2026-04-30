@@ -8,7 +8,7 @@ from pydantic import BaseModel  # BaseModel validates request JSON and converts 
 
 from trifirst.config import APP_NAME, DATABASE_PATH, STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET
 from trifirst.database.db import get_connection
-from trifirst.coach.ai_coach import chat
+from trifirst.coach.ai_coach import chat, generate_weekly_digest, _most_recent_completed_week_window
 from trifirst.integrations.strava import (
     authorize_url,
     exchange_token,
@@ -46,6 +46,13 @@ class ChatRequest(BaseModel):
     user_id: int
     message: str
 
+
+
+
+class DigestGenerateRequest(BaseModel):
+    """Request body for generating a weekly digest."""
+
+    user_id: int
 
 class RaceGoalRequest(BaseModel):
     """Request body for saving a race goal."""
@@ -256,3 +263,39 @@ def get_fitness_background(user_id: int) -> dict[str, object] | None:
             (user_id,),
         ).fetchone()
     return dict(row) if row else None
+
+
+@router.post("/digest/generate")
+def generate_digest(payload: DigestGenerateRequest) -> dict[str, str]:
+    """Generate and save an AI weekly digest for the most recent completed week."""
+    with get_connection() as connection:
+        digest_text = generate_weekly_digest(payload.user_id, connection)
+    week_start_date, _ = _most_recent_completed_week_window()
+    return {"digest": digest_text, "week_start_date": week_start_date}
+
+
+@router.get("/digest/{user_id}")
+def get_weekly_digests(user_id: int) -> list[dict[str, object]]:
+    """Return the 4 most recent weekly digests for a user."""
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                week_start_date,
+                total_swim_km,
+                total_bike_km,
+                total_run_km,
+                total_hours,
+                ai_summary_text,
+                generated_at
+            FROM weekly_summaries
+            WHERE user_id = ?
+            ORDER BY week_start_date DESC, id DESC
+            LIMIT 4
+            """,
+            (user_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
