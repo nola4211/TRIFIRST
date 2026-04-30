@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException  # HTTPException returns a clean HTTP error response (like 404 or 400).
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel  # BaseModel validates request JSON and converts it into typed Python objects.
 
 from trifirst.config import APP_NAME, DATABASE_PATH, STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET
 from trifirst.database.db import get_connection
@@ -67,18 +67,21 @@ class FitnessBackgroundRequest(BaseModel):
     weekly_hours_available: float
 
 
+# Health endpoint used by monitoring tools and uptime checks to confirm the API is running.
 @router.get("/health")
 def health_check() -> dict[str, str]:
     """Return a health status response."""
     return {"status": "ok", "app": APP_NAME}
 
 
+# Starts Strava connection flow; typically called when a user clicks "Connect Strava".
 @router.get("/auth/strava")
 def auth_strava() -> RedirectResponse:
     """Redirect the user to Strava OAuth authorization."""
     return RedirectResponse(authorize_url(STRAVA_CLIENT_ID))
 
 
+# Receives Strava redirect after login and stores tokens for this user.
 @router.get("/auth/strava/callback")
 def auth_strava_callback(code: str, state: str | None = None) -> dict[str, int | str]:
     """Exchange Strava auth code for tokens and save them for the user."""
@@ -93,6 +96,7 @@ def auth_strava_callback(code: str, state: str | None = None) -> dict[str, int |
     return {"message": "Strava connected successfully", "user_id": user_id}
 
 
+# Called by the frontend sync button to import recent Strava activities.
 @router.post("/sync/strava")
 def sync_strava_activities(payload: SyncRequest) -> dict[str, int | str]:
     """Sync Strava activities into the local database."""
@@ -107,6 +111,7 @@ def sync_strava_activities(payload: SyncRequest) -> dict[str, int | str]:
     return {"message": "Sync complete", "activities_added": activities_added}
 
 
+# Called by dashboard screens to load a user's activity list.
 @router.get("/activities/{user_id}")
 def get_user_activities(user_id: int) -> list[dict[str, object]]:
     """Return all activities for a user ordered by newest date first."""
@@ -125,6 +130,7 @@ def get_user_activities(user_id: int) -> list[dict[str, object]]:
     return [dict(row) for row in rows]
 
 
+# Called by the daily check-in form to save wellness feedback.
 @router.post("/checkin")
 def save_checkin(payload: CheckinRequest) -> dict[str, str]:
     """Save a daily check-in for a user."""
@@ -157,6 +163,7 @@ def save_checkin(payload: CheckinRequest) -> dict[str, str]:
     return {"message": "Check-in saved"}
 
 
+# Called by chat UI to send a message and get a coach reply.
 @router.post("/coach/chat")
 def coach_chat(payload: ChatRequest) -> dict[str, str]:
     """Generate a coaching response for a user chat message."""
@@ -165,6 +172,7 @@ def coach_chat(payload: ChatRequest) -> dict[str, str]:
     return {"response": response_text}
 
 
+# Called by profile form to save the user's target race details.
 @router.post("/race-goal")
 def save_race_goal(payload: RaceGoalRequest) -> dict[str, str]:
     """Save a race goal for a user."""
@@ -186,6 +194,7 @@ def save_race_goal(payload: RaceGoalRequest) -> dict[str, str]:
     return {"message": "Race goal saved"}
 
 
+# Called by profile form to save beginner skill levels and hours available.
 @router.post("/fitness-background")
 def save_fitness_background(payload: FitnessBackgroundRequest) -> dict[str, str]:
     """Save fitness background for a user."""
@@ -213,6 +222,7 @@ def save_fitness_background(payload: FitnessBackgroundRequest) -> dict[str, str]
     return {"message": "Fitness background saved"}
 
 
+# Called by the profile UI to pre-fill the latest saved race goal.
 @router.get("/race-goal/{user_id}")
 def get_race_goal(user_id: int) -> dict[str, object] | None:
     """Return most recent race goal for a user."""
@@ -230,6 +240,7 @@ def get_race_goal(user_id: int) -> dict[str, object] | None:
     return dict(row) if row else None
 
 
+# Called by the profile UI to pre-fill the latest fitness background values.
 @router.get("/fitness-background/{user_id}")
 def get_fitness_background(user_id: int) -> dict[str, object] | None:
     """Return most recent fitness background for a user."""

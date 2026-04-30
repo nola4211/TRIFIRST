@@ -1,4 +1,7 @@
-"""Utilities for authenticating with and syncing activities from the Strava API."""
+"""Utilities for authenticating with and syncing activities from the Strava API.
+
+OAuth2 is a standard login flow that lets one app access another app's data without sharing your password.
+"""
 
 from __future__ import annotations
 
@@ -13,6 +16,9 @@ STRAVA_AUTHORIZE_URL = "https://www.strava.com/oauth/authorize"
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 
+
+
+# --- OAuth functions ---
 
 class StravaIntegrationError(Exception):
     """Raised when Strava API or integration operations fail."""
@@ -124,6 +130,8 @@ def refresh_access_token(
     return _post_token(payload)
 
 
+
+# --- Token storage functions ---
 def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Connection) -> None:
     """Insert or update Strava tokens for a user.
 
@@ -246,6 +254,8 @@ def get_valid_token(
     return str(tokens["access_token"])
 
 
+
+# --- Activity sync functions ---
 def fetch_activities(
     access_token: str,
     after_timestamp: int | None = None,
@@ -266,6 +276,7 @@ def fetch_activities(
     page = 1
 
     while True:
+        # Pagination means we request results page by page until no full page is left.
         params: dict[str, Any] = {"per_page": 100, "page": page}
         if after_timestamp is not None:
             params["after"] = int(after_timestamp)
@@ -375,6 +386,7 @@ def sync_activities(
         if parsed is None:
             continue
 
+                # This duplicate check skips inserting an activity we already saved earlier.
         duplicate = db_conn.execute(
             """
             SELECT 1
