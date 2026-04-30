@@ -9,6 +9,7 @@ from trifirst.database.db import init_db
 
 app = FastAPI(title="TriFirst API")
 
+# CORS middleware lets a browser frontend call this API from a different origin safely.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,6 +21,7 @@ app.add_middleware(
 app.include_router(router)
 
 
+# This startup event runs once when the server boots so required tables exist.
 @app.on_event("startup")
 def on_startup() -> None:
     """Initialize database schema at application startup."""
@@ -27,4 +29,5 @@ def on_startup() -> None:
 
 
 if __name__ == "__main__":
+    # uvicorn is the web server that runs this FastAPI app locally or in production.
     uvicorn.run("trifirst.main:app", host="0.0.0.0", port=8000)

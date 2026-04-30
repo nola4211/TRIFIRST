@@ -33,7 +33,7 @@ def api_get(path: str):
 st.title("🏊🚴🏃 TriFirst")
 st.caption("Your personal Ironman training companion")
 
-with st.expander("⚙️ My Profile", expanded=False):
+with st.expander("⚙️ My Profile", expanded=False):  # st.expander creates a collapsible panel to hide optional content.
     race_goal_payload = api_get(f"/race-goal/{USER_ID}")
     fitness_payload = api_get(f"/fitness-background/{USER_ID}")
 
@@ -146,12 +146,12 @@ with st.expander("⚙️ My Profile", expanded=False):
             except requests.RequestException as exc:
                 st.error(f"Could not save fitness background: {exc}")
 
-# Fetch core data once for page sections
+# --- Load activity data used by multiple UI sections ---
 activities_payload = api_get(f"/activities/{USER_ID}")
 activities = activities_payload if isinstance(activities_payload, list) else []
 activities_df = pd.DataFrame(activities)
 
-# Section 2 — Training Stats
+# --- Training stats cards ---
 col1, col2, col3 = st.columns(3)
 
 total_activities = len(activities)
@@ -163,11 +163,11 @@ swim_count = counts.get("swim", 0)
 bike_count = counts.get("bike", 0)
 run_count = counts.get("run", 0)
 
-col1.metric("Total activities logged", total_activities)
+col1.metric("Total activities logged", total_activities)  # st.metric shows a single key number in a dashboard card.
 col2.metric("Total km (all disciplines)", f"{total_km:.1f}")
 col3.metric("Swim / Bike / Run", f"{swim_count} / {bike_count} / {run_count}")
 
-# Section 3 — Recent Activities Table
+# --- Recent activities table ---
 st.subheader("Recent Activities")
 
 if activities_df.empty:
@@ -188,7 +188,7 @@ else:
 
     st.dataframe(table_df[display_cols].head(10), use_container_width=True, hide_index=True)
 
-# Section 4 — Weekly Volume Chart
+# --- Weekly volume chart ---
 st.subheader("Weekly Volume")
 
 if activities_df.empty:
@@ -210,6 +210,7 @@ else:
             )
         )
 
+        # Plotly is used here to build an interactive weekly distance chart.
         figure = px.bar(
             weekly_volume,
             x="week",
@@ -222,10 +223,10 @@ else:
         figure.update_layout(xaxis_title="Week", yaxis_title="Kilometers")
         st.plotly_chart(figure, use_container_width=True)
 
-# Section 5 — Coach Tri Chat
+# --- Coach Tri chat interface ---
 st.subheader("💬 Chat with Coach Tri")
 
-if "chat_history" not in st.session_state:
+if "chat_history" not in st.session_state:  # st.session_state keeps values between reruns (like simple memory).
     st.session_state.chat_history = []
 
 for entry in st.session_state.chat_history:
@@ -256,7 +257,7 @@ if user_message:
     with st.chat_message("assistant"):
         st.markdown(coach_reply)
 
-# Section 6 — Daily Check-in (sidebar)
+# --- Daily check-in sidebar ---
 st.sidebar.title("📋 Daily Check-in")
 
 checkin_date = st.sidebar.date_input("Date", value=date.today())
