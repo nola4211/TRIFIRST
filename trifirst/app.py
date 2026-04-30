@@ -223,6 +223,44 @@ else:
         figure.update_layout(xaxis_title="Week", yaxis_title="Kilometers")
         st.plotly_chart(figure, use_container_width=True)
 
+# --- Weekly AI digest ---
+st.subheader("📰 Weekly Digest")
+
+if "weekly_digests" not in st.session_state:
+    payload = api_get(f"/digest/{USER_ID}")
+    st.session_state.weekly_digests = payload if isinstance(payload, list) else []
+
+if st.button("✨ Generate This Week's Digest"):
+    with st.spinner("Generating your weekly digest..."):
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/digest/generate",
+                json={"user_id": USER_ID},
+                timeout=45,
+            )
+            response.raise_for_status()
+            st.success("Weekly digest generated!")
+        except requests.RequestException as exc:
+            st.error(f"Could not generate digest: {exc}")
+
+    refreshed = api_get(f"/digest/{USER_ID}")
+    st.session_state.weekly_digests = refreshed if isinstance(refreshed, list) else []
+
+digests = st.session_state.weekly_digests
+if digests:
+    latest_digest = digests[0]
+    header = f"Week of {latest_digest.get('week_start_date', 'Unknown date')}"
+    st.markdown(f"**{header}**")
+    st.info(latest_digest.get("ai_summary_text") or "No digest text available.")
+
+    if len(digests) > 1:
+        with st.expander("Previous weeks"):
+            for digest in digests[1:]:
+                st.markdown(f"**Week of {digest.get('week_start_date', 'Unknown date')}**")
+                st.write(digest.get("ai_summary_text") or "No digest text available.")
+else:
+    st.info("No digest yet — click Generate to get your first weekly summary!")
+
 # --- Coach Tri chat interface ---
 st.subheader("💬 Chat with Coach Tri")
 
