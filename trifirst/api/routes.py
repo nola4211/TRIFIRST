@@ -6,9 +6,17 @@ from fastapi import APIRouter, HTTPException  # HTTPException returns a clean HT
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel  # BaseModel validates request JSON and converts it into typed Python objects.
 
-from trifirst.config import APP_NAME, DATABASE_PATH, STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET
+from trifirst.config import (
+    APP_NAME,
+    DATABASE_PATH,
+    GARMIN_EMAIL,
+    GARMIN_PASSWORD,
+    STRAVA_CLIENT_ID,
+    STRAVA_CLIENT_SECRET,
+)
 from trifirst.database.db import get_connection
 from trifirst.coach.ai_coach import chat, generate_weekly_digest, _most_recent_completed_week_window
+from trifirst.integrations.garmin import GarminClient
 from trifirst.integrations.strava import (
     authorize_url,
     exchange_token,
@@ -27,6 +35,14 @@ class SyncRequest(BaseModel):
 
     user_id: int
 
+
+
+
+class GarminSyncRequest(BaseModel):
+    """Request body for syncing Garmin wellness metrics."""
+
+    user_id: int
+    days: int = 7
 
 class CheckinRequest(BaseModel):
     """Request body for saving a daily check-in."""
@@ -294,6 +310,37 @@ def get_weekly_digests(user_id: int) -> list[dict[str, object]]:
             WHERE user_id = ?
             ORDER BY week_start_date DESC, id DESC
             LIMIT 4
+            """,
+            (user_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+@router.post("/sync/garmin")
+def sync_garmin_stats(payload: GarminSyncRequest) -> dict[str, int | str]:
+    """Sync Garmin daily recovery stats for a user."""
+    client = GarminClient(GARMIN_EMAIL, GARMIN_PASSWORD)
+    client.connect()
+
+    with get_connection() as connection:
+        days_synced = client.sync_stats(payload.user_id, connection, payload.days)
+
+    return {"message": "Garmin sync complete", "days_synced": days_synced}
+
+
+@router.get("/garmin/stats/{user_id}")
+def get_garmin_stats(user_id: int) -> list[dict[str, object]]:
+    """Return last 14 days of Garmin wellness stats for a user."""
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT user_id, date, sleep_hours, sleep_score, body_battery_high, body_battery_low,
+                   resting_hr, avg_stress, hrv_status, steps, updated_at
+            FROM garmin_daily_stats
+            WHERE user_id = ?
+            ORDER BY date DESC
+            LIMIT 14
             """,
             (user_id,),
         ).fetchall()

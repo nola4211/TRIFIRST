@@ -12,3 +12,6 @@ STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID", "")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET", "")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+
+GARMIN_EMAIL = os.getenv("GARMIN_EMAIL", "")
+GARMIN_PASSWORD = os.getenv("GARMIN_PASSWORD", "")

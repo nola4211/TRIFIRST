@@ -17,6 +17,20 @@ DISCIPLINE_COLORS = {"swim": "#1f77b4", "bike": "#ff7f0e", "run": "#d62728"}
 
 st.set_page_config(layout="wide", page_title="TriFirst", page_icon="🏊")
 
+with st.sidebar:
+    if st.button("🔄 Sync Garmin"):
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/sync/garmin",
+                json={"user_id": USER_ID, "days": 7},
+                timeout=45,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            st.success(f"Garmin sync complete ({payload.get('days_synced', 0)} days synced)")
+        except requests.RequestException as exc:
+            st.error(f"Could not sync Garmin: {exc}")
+
 
 def api_get(path: str):
     """GET helper with graceful error handling."""
@@ -222,6 +236,33 @@ else:
         )
         figure.update_layout(xaxis_title="Week", yaxis_title="Kilometers")
         st.plotly_chart(figure, use_container_width=True)
+
+# --- Recovery & wellness section ---
+st.subheader("💤 Recovery & Wellness")
+
+garmin_payload = api_get(f"/garmin/stats/{USER_ID}")
+garmin_rows = garmin_payload if isinstance(garmin_payload, list) else []
+
+if garmin_rows:
+    garmin_df = pd.DataFrame(garmin_rows)
+    garmin_df["date"] = pd.to_datetime(garmin_df["date"], errors="coerce")
+    garmin_df = garmin_df.sort_values("date")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Avg Sleep (hours)", f"{garmin_df['sleep_hours'].dropna().mean():.2f}" if garmin_df['sleep_hours'].notna().any() else "N/A")
+    c2.metric("Avg Body Battery High", f"{garmin_df['body_battery_high'].dropna().mean():.0f}" if garmin_df['body_battery_high'].notna().any() else "N/A")
+    c3.metric("Avg Resting HR", f"{garmin_df['resting_hr'].dropna().mean():.0f}" if garmin_df['resting_hr'].notna().any() else "N/A")
+    c4.metric("Avg Stress", f"{garmin_df['avg_stress'].dropna().mean():.0f}" if garmin_df['avg_stress'].notna().any() else "N/A")
+
+    trend_df = garmin_df.dropna(subset=["date", "body_battery_high"])
+    if trend_df.empty:
+        st.info("No body battery trend data available yet.")
+    else:
+        bb_fig = px.line(trend_df, x="date", y="body_battery_high", title="Body Battery Trend")
+        bb_fig.update_layout(xaxis_title="Date", yaxis_title="Body Battery High")
+        st.plotly_chart(bb_fig, use_container_width=True)
+else:
+    st.info("No Garmin data yet — click Sync Garmin in the sidebar to get started")
 
 # --- Weekly AI digest ---
 st.subheader("📰 Weekly Digest")
