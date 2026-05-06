@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -249,17 +250,46 @@ if garmin_rows:
     garmin_df = garmin_df.sort_values("date")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Avg Sleep (hours)", f"{garmin_df['sleep_hours'].dropna().mean():.2f}" if garmin_df['sleep_hours'].notna().any() else "N/A")
-    c2.metric("Avg Body Battery High", f"{garmin_df['body_battery_high'].dropna().mean():.0f}" if garmin_df['body_battery_high'].notna().any() else "N/A")
-    c3.metric("Avg Resting HR", f"{garmin_df['resting_hr'].dropna().mean():.0f}" if garmin_df['resting_hr'].notna().any() else "N/A")
-    c4.metric("Avg Stress", f"{garmin_df['avg_stress'].dropna().mean():.0f}" if garmin_df['avg_stress'].notna().any() else "N/A")
+    latest = garmin_df.dropna(subset=["date"]).sort_values("date").iloc[-1]
+    c1.metric("Resting HR", f"{latest.get('resting_hr'):.0f}" if pd.notna(latest.get("resting_hr")) else "N/A")
+    c2.metric("Body Battery (wake)", f"{latest.get('body_battery_high'):.0f}" if pd.notna(latest.get("body_battery_high")) else "N/A")
+    c3.metric("HRV Avg", f"{latest.get('hrv_avg'):.1f}" if pd.notna(latest.get("hrv_avg")) else "N/A")
+    c4.metric("Steps", f"{latest.get('steps'):.0f}" if pd.notna(latest.get("steps")) else "N/A")
 
-    trend_df = garmin_df.dropna(subset=["date", "body_battery_high"])
+    hrv_status = latest.get("hrv_status")
+    badge_colors = {"BALANCED": "#2e7d32", "LOW": "#ef6c00", "POOR": "#c62828"}
+    if isinstance(hrv_status, str):
+        badge_color = badge_colors.get(hrv_status.upper(), "#546e7a")
+        st.markdown(
+            f"HRV Status: <span style='background-color:{badge_color}; color:white; padding:0.2rem 0.5rem; border-radius:0.4rem;'>{hrv_status}</span>",
+            unsafe_allow_html=True,
+        )
+
+    trend_df = garmin_df.dropna(subset=["date", "body_battery_high", "body_battery_low"])
     if trend_df.empty:
         st.info("No body battery trend data available yet.")
     else:
-        bb_fig = px.line(trend_df, x="date", y="body_battery_high", title="Body Battery Trend")
-        bb_fig.update_layout(xaxis_title="Date", yaxis_title="Body Battery High")
+        bb_fig = go.Figure()
+        bb_fig.add_trace(
+            go.Scatter(
+                x=trend_df["date"],
+                y=trend_df["body_battery_high"],
+                mode="lines",
+                line=dict(color="#1f77b4"),
+                name="Wake (High)",
+            )
+        )
+        bb_fig.add_trace(
+            go.Scatter(
+                x=trend_df["date"],
+                y=trend_df["body_battery_low"],
+                mode="lines",
+                fill="tonexty",
+                line=dict(color="#9ecae1"),
+                name="Sleep Start (Low)",
+            )
+        )
+        bb_fig.update_layout(title="Body Battery Range", xaxis_title="Date", yaxis_title="Body Battery")
         st.plotly_chart(bb_fig, use_container_width=True)
 else:
     st.info("No Garmin data yet — click Sync Garmin in the sidebar to get started")
