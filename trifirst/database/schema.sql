@@ -104,8 +104,12 @@ CREATE TABLE IF NOT EXISTS garmin_daily_stats (
     body_battery_high INTEGER,
     body_battery_low INTEGER,
     resting_hr INTEGER,
+    avg_sleep_hr REAL,
+    hrv_avg REAL,
     avg_stress INTEGER,
     hrv_status TEXT,
+    body_battery_change INTEGER,
+    avg_resting_hr_7day INTEGER,
     steps INTEGER,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)

@@ -335,8 +335,9 @@ def get_garmin_stats(user_id: int) -> list[dict[str, object]]:
     with get_connection() as connection:
         rows = connection.execute(
             """
-            SELECT user_id, date, sleep_hours, sleep_score, body_battery_high, body_battery_low,
-                   resting_hr, avg_stress, hrv_status, steps, updated_at
+            SELECT user_id, date, body_battery_high, body_battery_low, resting_hr,
+                   avg_sleep_hr, hrv_avg, hrv_status, body_battery_change,
+                   avg_resting_hr_7day, steps, updated_at
             FROM garmin_daily_stats
             WHERE user_id = ?
             ORDER BY date DESC
