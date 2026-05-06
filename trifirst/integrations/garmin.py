@@ -56,73 +56,74 @@ class GarminClient:
 
         stats: dict[str, int | float | str | None] = {
             "date": date_str,
-            "sleep_hours": None,
-            "sleep_score": None,
             "body_battery_high": None,
             "body_battery_low": None,
             "resting_hr": None,
-            "avg_stress": None,
+            "avg_sleep_hr": None,
+            "hrv_avg": None,
             "hrv_status": None,
+            "body_battery_change": None,
+            "avg_resting_hr_7day": None,
             "steps": None,
         }
 
         try:
             sleep_data = self.client.get_sleep_data(date_str)
-            total_sleep_seconds = sleep_data.get("dailySleepDTO", {}).get("sleepTimeSeconds")
-            if isinstance(total_sleep_seconds, (int, float)):
-                stats["sleep_hours"] = round(total_sleep_seconds / 3600, 2)
-            sleep_score = sleep_data.get("sleepScores", {}).get("overall", {}).get("value")
-            if isinstance(sleep_score, int):
-                stats["sleep_score"] = sleep_score
+            if isinstance(sleep_data.get("restingHeartRate"), int):
+                stats["resting_hr"] = sleep_data["restingHeartRate"]
+            if isinstance(sleep_data.get("avgOvernightHrv"), (int, float)):
+                stats["hrv_avg"] = float(sleep_data["avgOvernightHrv"])
+            if isinstance(sleep_data.get("hrvStatus"), str):
+                stats["hrv_status"] = sleep_data["hrvStatus"]
+            if isinstance(sleep_data.get("bodyBatteryChange"), int):
+                stats["body_battery_change"] = sleep_data["bodyBatteryChange"]
+
+            sleep_body_battery = sleep_data.get("sleepBodyBattery")
+            if isinstance(sleep_body_battery, list) and sleep_body_battery:
+                first_entry = sleep_body_battery[0] if isinstance(sleep_body_battery[0], dict) else None
+                last_entry = sleep_body_battery[-1] if isinstance(sleep_body_battery[-1], dict) else None
+                first_value = first_entry.get("value") if first_entry else None
+                last_value = last_entry.get("value") if last_entry else None
+                if isinstance(first_value, int):
+                    stats["body_battery_low"] = first_value
+                if isinstance(last_value, int):
+                    stats["body_battery_high"] = last_value
+
+            sleep_heart_rate = sleep_data.get("sleepHeartRate")
+            if isinstance(sleep_heart_rate, list):
+                hr_values = []
+                for entry in sleep_heart_rate:
+                    if isinstance(entry, dict):
+                        value = entry.get("value")
+                        if isinstance(value, (int, float)):
+                            hr_values.append(float(value))
+                if hr_values:
+                    stats["avg_sleep_hr"] = sum(hr_values) / len(hr_values)
         except Exception:  # noqa: BLE001
             pass
 
         try:
-            body_battery_data = self.client.get_body_battery(date_str, date_str)
-            values = [
-                entry.get("bodyBattery")
-                for entry in body_battery_data
-                if isinstance(entry.get("bodyBattery"), int)
-            ]
-            if values:
-                stats["body_battery_high"] = max(values)
-                stats["body_battery_low"] = min(values)
-        except Exception:  # noqa: BLE001
-            pass
-
-        try:
-            rhr_data = self.client.get_rhr_day(date_str)
-            resting_hr = rhr_data.get("allMetrics", {}).get("metricsMap", {}).get("WELLNESS_RESTING_HEART_RATE")
-            if isinstance(resting_hr, list) and resting_hr:
-                first = resting_hr[0]
-                value = first.get("value") if isinstance(first, dict) else None
-                if isinstance(value, int):
-                    stats["resting_hr"] = value
-        except Exception:  # noqa: BLE001
-            pass
-
-        try:
-            stress_data = self.client.get_stress_data(date_str)
-            avg_stress = stress_data.get("overallStressLevel")
-            if isinstance(avg_stress, int):
-                stats["avg_stress"] = avg_stress
-        except Exception:  # noqa: BLE001
-            pass
-
-        try:
-            hrv_data = self.client.get_hrv_data(date_str)
-            hrv_status = hrv_data.get("hrvStatus") or hrv_data.get("status")
-            if isinstance(hrv_status, str):
-                stats["hrv_status"] = hrv_status
+            heart_rates = self.client.get_heart_rates(date_str)
+            if isinstance(heart_rates.get("restingHeartRate"), int) and stats["resting_hr"] is None:
+                stats["resting_hr"] = heart_rates["restingHeartRate"]
+            if isinstance(heart_rates.get("lastSevenDaysAvgRestingHeartRate"), int):
+                stats["avg_resting_hr_7day"] = heart_rates["lastSevenDaysAvgRestingHeartRate"]
         except Exception:  # noqa: BLE001
             pass
 
         try:
             steps_data = self.client.get_steps_data(date_str)
-            if isinstance(steps_data, dict):
+            total_steps: int | None = None
+            if isinstance(steps_data, list):
+                step_values = [
+                    item.get("steps")
+                    for item in steps_data
+                    if isinstance(item, dict) and isinstance(item.get("steps"), int)
+                ]
+                if step_values:
+                    total_steps = sum(step_values)
+            elif isinstance(steps_data, dict) and isinstance(steps_data.get("totalSteps"), int):
                 total_steps = steps_data.get("totalSteps")
-            else:
-                total_steps = None
             if isinstance(total_steps, int):
                 stats["steps"] = total_steps
         except Exception:  # noqa: BLE001
@@ -158,25 +159,27 @@ class GarminClient:
                 db_conn.execute(
                     """
                     UPDATE garmin_daily_stats
-                    SET sleep_hours = ?,
-                        sleep_score = ?,
-                        body_battery_high = ?,
+                    SET body_battery_high = ?,
                         body_battery_low = ?,
                         resting_hr = ?,
-                        avg_stress = ?,
+                        avg_sleep_hr = ?,
+                        hrv_avg = ?,
                         hrv_status = ?,
+                        body_battery_change = ?,
+                        avg_resting_hr_7day = ?,
                         steps = ?,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = ? AND date = ?
                     """,
                     (
-                        daily["sleep_hours"],
-                        daily["sleep_score"],
                         daily["body_battery_high"],
                         daily["body_battery_low"],
                         daily["resting_hr"],
-                        daily["avg_stress"],
+                        daily["avg_sleep_hr"],
+                        daily["hrv_avg"],
                         daily["hrv_status"],
+                        daily["body_battery_change"],
+                        daily["avg_resting_hr_7day"],
                         daily["steps"],
                         user_id,
                         date_str,
@@ -188,27 +191,29 @@ class GarminClient:
                     INSERT INTO garmin_daily_stats (
                         user_id,
                         date,
-                        sleep_hours,
-                        sleep_score,
                         body_battery_high,
                         body_battery_low,
                         resting_hr,
-                        avg_stress,
+                        avg_sleep_hr,
+                        hrv_avg,
                         hrv_status,
+                        body_battery_change,
+                        avg_resting_hr_7day,
                         steps
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
                         date_str,
-                        daily["sleep_hours"],
-                        daily["sleep_score"],
                         daily["body_battery_high"],
                         daily["body_battery_low"],
                         daily["resting_hr"],
-                        daily["avg_stress"],
+                        daily["avg_sleep_hr"],
+                        daily["hrv_avg"],
                         daily["hrv_status"],
+                        daily["body_battery_change"],
+                        daily["avg_resting_hr_7day"],
                         daily["steps"],
                     ),
                 )
