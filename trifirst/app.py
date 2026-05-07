@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -17,33 +16,6 @@ DISCIPLINE_COLORS = {"swim": "#1f77b4", "bike": "#ff7f0e", "run": "#d62728"}
 
 
 st.set_page_config(layout="wide", page_title="TriFirst", page_icon="🏊")
-
-with st.sidebar:
-    if st.button("🔄 Sync Strava"):
-        try:
-            response = requests.post(
-                f"{API_BASE_URL}/sync/strava",
-                json={"user_id": USER_ID},
-                timeout=45,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            st.success(f"Strava sync complete ({payload.get('activities_added', 0)} activities added)")
-        except requests.RequestException as exc:
-            st.error(f"Could not sync Strava: {exc}")
-
-    if st.sidebar.button("🔄 Sync Garmin", key="sync_garmin_btn"):
-        try:
-            response = requests.post(
-                f"{API_BASE_URL}/sync/garmin",
-                json={"user_id": USER_ID, "days": 7},
-                timeout=45,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            st.success(f"Garmin sync complete ({payload.get('days_synced', 0)} days synced)")
-        except requests.RequestException as exc:
-            st.error(f"Could not sync Garmin: {exc}")
 
 
 def api_get(path: str):
@@ -58,10 +30,10 @@ def api_get(path: str):
 
 
 # Section 1 — Header
-st.title("TriFirst")
+st.title("🏊🚴🏃 TriFirst")
 st.caption("Your personal Ironman training companion")
 
-with st.expander("My Profile", expanded=False):  # st.expander creates a collapsible panel to hide optional content.
+with st.expander("⚙️ My Profile", expanded=False):  # st.expander creates a collapsible panel to hide optional content.
     race_goal_payload = api_get(f"/race-goal/{USER_ID}")
     fitness_payload = api_get(f"/fitness-background/{USER_ID}")
 
@@ -80,7 +52,7 @@ with st.expander("My Profile", expanded=False):  # st.expander creates a collaps
     }
     db_to_level_label = {value: label for label, value in level_options.items()}
 
-    st.subheader("My Race Goal")
+    st.subheader("🏁 My Race Goal")
     default_race_date = date.today() + timedelta(days=180)
     existing_race = race_goal_payload if isinstance(race_goal_payload, dict) else {}
     existing_race_date = existing_race.get("race_date")
@@ -251,62 +223,6 @@ else:
         figure.update_layout(xaxis_title="Week", yaxis_title="Kilometers")
         st.plotly_chart(figure, use_container_width=True)
 
-# --- Recovery & wellness section ---
-st.subheader("💤 Recovery & Wellness")
-
-garmin_payload = api_get(f"/garmin/stats/{USER_ID}")
-garmin_rows = garmin_payload if isinstance(garmin_payload, list) else []
-
-if garmin_rows:
-    garmin_df = pd.DataFrame(garmin_rows)
-    garmin_df["date"] = pd.to_datetime(garmin_df["date"], errors="coerce")
-    garmin_df = garmin_df.sort_values("date")
-
-    c1, c2, c3, c4 = st.columns(4)
-    latest = garmin_df.dropna(subset=["date"]).sort_values("date").iloc[-1]
-    c1.metric("Resting HR", f"{latest.get('resting_hr'):.0f}" if pd.notna(latest.get("resting_hr")) else "N/A")
-    c2.metric("Body Battery (wake)", f"{latest.get('body_battery_high'):.0f}" if pd.notna(latest.get("body_battery_high")) else "N/A")
-    c3.metric("HRV Avg", f"{latest.get('hrv_avg'):.1f}" if pd.notna(latest.get("hrv_avg")) else "N/A")
-    c4.metric("Steps", f"{latest.get('steps'):.0f}" if pd.notna(latest.get("steps")) else "N/A")
-
-    hrv_status = latest.get("hrv_status")
-    badge_colors = {"BALANCED": "#2e7d32", "LOW": "#ef6c00", "POOR": "#c62828"}
-    if isinstance(hrv_status, str):
-        badge_color = badge_colors.get(hrv_status.upper(), "#546e7a")
-        st.markdown(
-            f"HRV Status: <span style='background-color:{badge_color}; color:white; padding:0.2rem 0.5rem; border-radius:0.4rem;'>{hrv_status}</span>",
-            unsafe_allow_html=True,
-        )
-
-    trend_df = garmin_df.dropna(subset=["date", "body_battery_high", "body_battery_low"])
-    if trend_df.empty:
-        st.info("No body battery trend data available yet.")
-    else:
-        bb_fig = go.Figure()
-        bb_fig.add_trace(
-            go.Scatter(
-                x=trend_df["date"],
-                y=trend_df["body_battery_high"],
-                mode="lines",
-                line=dict(color="#1f77b4"),
-                name="Wake (High)",
-            )
-        )
-        bb_fig.add_trace(
-            go.Scatter(
-                x=trend_df["date"],
-                y=trend_df["body_battery_low"],
-                mode="lines",
-                fill="tonexty",
-                line=dict(color="#9ecae1"),
-                name="Sleep Start (Low)",
-            )
-        )
-        bb_fig.update_layout(title="Body Battery Range", xaxis_title="Date", yaxis_title="Body Battery")
-        st.plotly_chart(bb_fig, use_container_width=True)
-else:
-    st.info("No Garmin data yet — click Sync Garmin in the sidebar to get started")
-
 # --- Weekly AI digest ---
 st.subheader("📰 Weekly Digest")
 
@@ -379,34 +295,8 @@ if user_message:
     with st.chat_message("assistant"):
         st.markdown(coach_reply)
 
-# --- Daily check-in sidebar ---
-st.sidebar.title("📋 Daily Check-in")
-
-checkin_date = st.sidebar.date_input("Date", value=date.today())
-sleep_quality = st.sidebar.slider("Sleep quality", 1, 5, 3)
-energy = st.sidebar.slider("Energy", 1, 5, 3)
-soreness = st.sidebar.slider("Soreness", 1, 5, 3)
-life_stress = st.sidebar.slider("Life stress", 1, 5, 3)
-
-if st.sidebar.button("Save check-in"):
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/checkin",
-            json={
-                "user_id": USER_ID,
-                "date": checkin_date.isoformat(),
-                "sleep_quality": sleep_quality,
-                "energy": energy,
-                "soreness": soreness,
-                "life_stress": life_stress,
-                "notes": None,
-            },
-            timeout=15,
-        )
-        response.raise_for_status()
-        st.sidebar.success("Check-in saved successfully.")
-    except requests.RequestException as exc:
-        st.sidebar.error(f"Could not save check-in: {exc}")
+# --- Sidebar sync buttons ---
+st.sidebar.title("⚙️ TriFirst")
 
 if st.sidebar.button("🔄 Sync Strava", key="sync_strava_btn"):
     try:
@@ -421,3 +311,17 @@ if st.sidebar.button("🔄 Sync Strava", key="sync_strava_btn"):
         st.sidebar.success(f"Sync complete. Added {activities_added} activities.")
     except requests.RequestException as exc:
         st.sidebar.error(f"Strava sync failed: {exc}")
+
+if st.sidebar.button("🔄 Sync Garmin", key="sync_garmin_btn"):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/sync/garmin",
+            json={"user_id": USER_ID, "days": 7},
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        days_synced = payload.get("days_synced", 0)
+        st.sidebar.success(f"Garmin sync complete. {days_synced} days synced.")
+    except requests.RequestException as exc:
+        st.sidebar.error(f"Garmin sync failed: {exc}")
