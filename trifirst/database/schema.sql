@@ -101,3 +101,15 @@ CREATE TABLE IF NOT EXISTS garmin_daily_stats (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
+
+
+CREATE TABLE IF NOT EXISTS athlete_profile (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    injury_history TEXT,
+    physical_limitations TEXT,
+    preferred_training_days TEXT,
+    training_days_notes TEXT,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
