@@ -380,3 +380,65 @@ def get_coach_history(user_id: int) -> list[dict[str, object]]:
         ).fetchall()
 
     return [dict(row) for row in rows]
+
+
+@router.get("/race-calculator/{user_id}")
+def get_race_calculator(user_id: int) -> dict[str, object]:
+    """Return race calculator defaults based on recent activities and latest race goal."""
+    with get_connection() as connection:
+        activity_rows = connection.execute(
+            """
+            SELECT activity_type, duration_mins, distance_km
+            FROM activities
+            WHERE user_id = ?
+              AND activity_type IN ('swim', 'bike', 'run')
+              AND distance_km > 0
+              AND duration_mins > 0
+              AND date >= date('now', '-90 days')
+            """,
+            (user_id,),
+        ).fetchall()
+
+        race_goal = connection.execute(
+            """
+            SELECT race_distance, race_name, race_date
+            FROM race_goals
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+
+    swim_paces = []
+    bike_speeds = []
+    run_paces = []
+    counts = {"swim": 0, "bike": 0, "run": 0}
+
+    for row in activity_rows:
+        activity_type = row["activity_type"]
+        duration_mins = float(row["duration_mins"])
+        distance_km = float(row["distance_km"])
+
+        if activity_type == "swim":
+            swim_paces.append((duration_mins / distance_km) / 10)
+            counts["swim"] += 1
+        elif activity_type == "bike":
+            bike_speeds.append((distance_km / duration_mins) * 60)
+            counts["bike"] += 1
+        elif activity_type == "run":
+            run_paces.append(duration_mins / distance_km)
+            counts["run"] += 1
+
+    def _average(values: list[float]) -> float | None:
+        return (sum(values) / len(values)) if values else None
+
+    return {
+        "race_distance": race_goal["race_distance"] if race_goal else None,
+        "race_name": race_goal["race_name"] if race_goal else None,
+        "race_date": race_goal["race_date"] if race_goal else None,
+        "avg_swim_pace_per_100m": _average(swim_paces),
+        "avg_bike_speed_kmh": _average(bike_speeds),
+        "avg_run_pace_per_km": _average(run_paces),
+        "activity_counts": counts,
+    }
