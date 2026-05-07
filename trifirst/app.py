@@ -45,10 +45,10 @@ def api_get(path: str):
 
 
 # Section 1 — Header
-st.title("🏊🚴🏃 TriFirst")
+st.title("TriFirst")
 st.caption("Your personal Ironman training companion")
 
-with st.expander("⚙️ My Profile", expanded=False):  # st.expander creates a collapsible panel to hide optional content.
+with st.expander("My Profile", expanded=False):  # st.expander creates a collapsible panel to hide optional content.
     race_goal_payload = api_get(f"/race-goal/{USER_ID}")
     fitness_payload = api_get(f"/fitness-background/{USER_ID}")
 
@@ -67,7 +67,7 @@ with st.expander("⚙️ My Profile", expanded=False):  # st.expander creates a 
     }
     db_to_level_label = {value: label for label, value in level_options.items()}
 
-    st.subheader("🏁 My Race Goal")
+    st.subheader("My Race Goal")
     default_race_date = date.today() + timedelta(days=180)
     existing_race = race_goal_payload if isinstance(race_goal_payload, dict) else {}
     existing_race_date = existing_race.get("race_date")
