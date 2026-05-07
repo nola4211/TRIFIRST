@@ -7,10 +7,16 @@ import requests
 import streamlit as st
 
 API_BASE_URL = "http://localhost:8000"
-USER_ID = 1
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 st.set_page_config(page_title="Coach Tri", page_icon="🏅", layout="wide")
+
+if "user_id" not in st.session_state:
+    st.warning("Please log in to access this page.")
+    st.page_link("pages/0_Login.py", label="Go to Login →")
+    st.stop()
+
+USER_ID = st.session_state["user_id"]
 
 
 def api_get(path: str):
@@ -163,3 +169,10 @@ with right_col:
         f"This week — Swim: **{swim_km:.1f}km**, Bike: **{bike_km:.1f}km**, Run: **{run_km:.1f}km**\n\n"
         f"Body battery: **{latest_bb}**  |  Resting HR: **{latest_rhr}**"
     )
+
+
+st.sidebar.divider()
+if st.sidebar.button("🚪 Logout", key="logout_btn"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.switch_page("pages/0_Login.py")
