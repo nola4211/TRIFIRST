@@ -37,6 +37,17 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         (user_id,),
     ).fetchone()
 
+
+    athlete_profile_row = db_conn.execute(
+        """
+        SELECT injury_history, physical_limitations, preferred_training_days, training_days_notes
+        FROM athlete_profile
+        WHERE user_id = ?
+        LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+
     fitness_row = db_conn.execute(
         """
         SELECT swim_level, bike_level, run_level, weekly_hours_available
@@ -97,6 +108,16 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         )
     else:
         lines.append("Race goal: none recorded")
+
+
+    if athlete_profile_row:
+        lines.append("Athlete profile:")
+        lines.append(f"- Injury history: {athlete_profile_row['injury_history']}")
+        lines.append(f"- Physical limitations: {athlete_profile_row['physical_limitations']}")
+        lines.append(f"- Preferred training days: {athlete_profile_row['preferred_training_days']}")
+        lines.append(f"- Training schedule notes: {athlete_profile_row['training_days_notes']}")
+    else:
+        lines.append("Athlete profile: not yet completed")
 
     if fitness_row:
         lines.append(

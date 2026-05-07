@@ -68,6 +68,17 @@ class RaceGoalRequest(BaseModel):
     goal_finish_time: str | None = None
 
 
+
+class AthleteProfileRequest(BaseModel):
+    """Request body for creating/updating athlete profile."""
+
+    user_id: int
+    injury_history: str | None = None
+    physical_limitations: str | None = None
+    preferred_training_days: str | None = None
+    training_days_notes: str | None = None
+
+
 class FitnessBackgroundRequest(BaseModel):
     """Request body for saving fitness background."""
 
@@ -297,6 +308,73 @@ def get_garmin_stats(user_id: int) -> list[dict[str, object]]:
             WHERE user_id = ?
             ORDER BY date DESC
             LIMIT 14
+            """,
+            (user_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
+
+
+@router.post("/athlete-profile")
+def save_athlete_profile(payload: AthleteProfileRequest) -> dict[str, str]:
+    """Upsert athlete profile details for a user."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO athlete_profile (
+                user_id, injury_history, physical_limitations, preferred_training_days, training_days_notes
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                injury_history = excluded.injury_history,
+                physical_limitations = excluded.physical_limitations,
+                preferred_training_days = excluded.preferred_training_days,
+                training_days_notes = excluded.training_days_notes,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                payload.user_id,
+                payload.injury_history,
+                payload.physical_limitations,
+                payload.preferred_training_days,
+                payload.training_days_notes,
+            ),
+        )
+        connection.commit()
+    return {"message": "Profile saved"}
+
+
+@router.get("/athlete-profile/{user_id}")
+def get_athlete_profile(user_id: int) -> dict[str, object] | None:
+    """Return athlete profile for a user if present."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT user_id, injury_history, physical_limitations, preferred_training_days, training_days_notes, updated_at
+            FROM athlete_profile
+            WHERE user_id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+@router.get("/coach/history/{user_id}")
+def get_coach_history(user_id: int) -> list[dict[str, object]]:
+    """Return the last 10 coach messages ordered oldest to newest."""
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT role, message, timestamp
+            FROM (
+                SELECT role, message, timestamp, id
+                FROM coach_messages
+                WHERE user_id = ?
+                ORDER BY timestamp DESC, id DESC
+                LIMIT 10
+            )
+            ORDER BY timestamp ASC, id ASC
             """,
             (user_id,),
         ).fetchall()
