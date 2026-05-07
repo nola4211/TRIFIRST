@@ -10,12 +10,18 @@ import requests
 import streamlit as st
 
 API_BASE_URL = "http://localhost:8000"
-USER_ID = 1
 ACTIVITY_EMOJI = {"swim": "🏊", "bike": "🚴", "run": "🏃"}
 DISCIPLINE_COLORS = {"swim": "#1f77b4", "bike": "#ff7f0e", "run": "#d62728"}
 
 
 st.set_page_config(layout="wide", page_title="TriFirst", page_icon="🏊")
+
+if "user_id" not in st.session_state:
+    st.warning("Please log in to access this page.")
+    st.page_link("pages/0_Login.py", label="Go to Login →")
+    st.stop()
+
+USER_ID = st.session_state["user_id"]
 
 
 def api_get(path: str):
@@ -361,3 +367,10 @@ if st.sidebar.button("🔄 Sync Garmin", key="sync_garmin_btn"):
         st.sidebar.success(f"Garmin sync complete. {days_synced} days synced.")
     except requests.RequestException as exc:
         st.sidebar.error(f"Garmin sync failed: {exc}")
+
+
+st.sidebar.divider()
+if st.sidebar.button("🚪 Logout", key="logout_btn"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.switch_page("pages/0_Login.py")
