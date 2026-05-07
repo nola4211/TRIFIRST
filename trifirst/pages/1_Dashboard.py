@@ -252,9 +252,84 @@ if digests:
 else:
     st.info("No digest yet — click Generate to get your first weekly summary!")
 
-# --- Link to Coach Tri ---
-st.divider()
-st.page_link("pages/2_Coach_Tri.py", label="💬 Chat with Coach Tri →", icon="🏅")
+# --- Race day calculator ---
+st.subheader("🏁 Race Day Calculator")
+race_calc_payload = api_get(f"/race-calculator/{USER_ID}")
+race_calc = race_calc_payload if isinstance(race_calc_payload, dict) else {}
+
+if not race_calc.get("race_distance"):
+    st.info("Set a race goal in My Profile to use the calculator")
+else:
+    race_name = race_calc.get("race_name") or "Your race"
+    race_date = race_calc.get("race_date") or "Unknown date"
+    st.markdown(f"**{race_name} — {race_date}**")
+
+    counts = race_calc.get("activity_counts") or {}
+    swim_default = float(race_calc.get("avg_swim_pace_per_100m") or 3.0)
+    bike_default = float(race_calc.get("avg_bike_speed_kmh") or 20.0)
+    run_default = float(race_calc.get("avg_run_pace_per_km") or 7.0)
+
+    input_col1, input_col2, input_col3 = st.columns(3)
+    with input_col1:
+        swim_pace = st.number_input("Swim pace (min per 100m)", min_value=0.1, value=swim_default, step=0.1)
+        st.caption(f"Based on {counts.get('swim', 0)} activities")
+    with input_col2:
+        bike_speed = st.number_input("Bike speed (km/h)", min_value=0.1, value=bike_default, step=0.1)
+        st.caption(f"Based on {counts.get('bike', 0)} activities")
+    with input_col3:
+        run_pace = st.number_input("Run pace (min per km)", min_value=0.1, value=run_default, step=0.1)
+        st.caption(f"Based on {counts.get('run', 0)} activities")
+
+    race_distances = {
+        "sprint": {"swim": 0.75, "bike": 20.0, "run": 5.0, "transition": 10},
+        "olympic": {"swim": 1.5, "bike": 40.0, "run": 10.0, "transition": 10},
+        "70.3": {"swim": 1.9, "bike": 90.0, "run": 21.1, "transition": 20},
+        "full": {"swim": 3.8, "bike": 180.0, "run": 42.2, "transition": 20},
+    }
+
+    selected = race_distances.get(str(race_calc.get("race_distance")).lower(), race_distances["sprint"])
+    swim_mins = (selected["swim"] * 10) * swim_pace
+    bike_mins = (selected["bike"] / bike_speed) * 60
+    run_mins = selected["run"] * run_pace
+    transition_mins = selected["transition"]
+    total_mins = swim_mins + bike_mins + run_mins + transition_mins
+
+    def fmt_hhmm(minutes: float) -> str:
+        total = int(round(minutes))
+        hours = total // 60
+        mins = total % 60
+        return f"{hours}:{mins:02d}"
+
+    out1, out2, out3, out4 = st.columns(4)
+    out1.metric("🏊 Swim", fmt_hhmm(swim_mins))
+    out2.metric("🚴 Bike", fmt_hhmm(bike_mins))
+    out3.metric("🏃 Run", fmt_hhmm(run_mins))
+    out4.metric("🏁 Total", fmt_hhmm(total_mins))
+
+    with st.expander("🍌 Nutrition & Hydration Plan"):
+        carbs_per_hour = 90 if total_mins > 150 else 60
+        total_carbs_needed = min(total_mins * 1.0, (total_mins / 60) * carbs_per_hour)
+        total_fluid_needed = total_mins * 0.6
+        num_gels = round(total_carbs_needed / 25)
+        bottles = round(total_fluid_needed / 500)
+        gel_interval = max(20, int(round((bike_mins + run_mins) / max(num_gels, 1))))
+
+        plan_df = pd.DataFrame(
+            [
+                {"Item": "Total carbohydrates needed", "Recommendation": f"{total_carbs_needed:.0f} grams"},
+                {"Item": "Estimated fluid needed", "Recommendation": f"{total_fluid_needed:.0f} ml ({bottles} bottles)"},
+                {"Item": "Suggested gels", "Recommendation": f"{num_gels} gels (one every {gel_interval} mins on the bike/run)"},
+                {"Item": "Pre-race meal", "Recommendation": "High carb meal 2-3 hours before start"},
+                {"Item": "Race morning", "Recommendation": "Light snack 30-60 mins before (banana, toast)"},
+                {"Item": "On the bike", "Recommendation": "Start eating at 20 mins, eat every 20-30 mins"},
+                {"Item": "On the run", "Recommendation": "Gel every 30-40 mins, sip at every aid station"},
+            ]
+        )
+        st.table(plan_df)
+        st.caption("These are estimates based on your predicted finish time. Always test your nutrition in training first.")
+
+# --- Coach Tri ---
+st.page_link("pages/2_Coach_Tri.py", label="💬 Chat with Coach Tri →")
 
 # --- Sidebar sync buttons ---
 st.sidebar.title("⚙️ TriFirst")
