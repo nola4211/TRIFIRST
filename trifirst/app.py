@@ -32,7 +32,7 @@ with st.sidebar:
         except requests.RequestException as exc:
             st.error(f"Could not sync Strava: {exc}")
 
-    if st.button("🔄 Sync Garmin"):
+    if st.sidebar.button("🔄 Sync Garmin", key="sync_garmin_btn"):
         try:
             response = requests.post(
                 f"{API_BASE_URL}/sync/garmin",
@@ -408,7 +408,7 @@ if st.sidebar.button("Save check-in"):
     except requests.RequestException as exc:
         st.sidebar.error(f"Could not save check-in: {exc}")
 
-if st.sidebar.button("🔄 Sync Strava"):
+if st.sidebar.button("🔄 Sync Strava", key="sync_strava_btn"):
     try:
         response = requests.post(
             f"{API_BASE_URL}/sync/strava",
