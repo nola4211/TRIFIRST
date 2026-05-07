@@ -44,18 +44,6 @@ class GarminSyncRequest(BaseModel):
     user_id: int
     days: int = 7
 
-class CheckinRequest(BaseModel):
-    """Request body for saving a daily check-in."""
-
-    user_id: int
-    date: str
-    sleep_quality: int
-    soreness: int
-    energy: int
-    life_stress: int
-    notes: str | None = None
-
-
 class ChatRequest(BaseModel):
     """Request body for AI coaching chat."""
 
@@ -151,39 +139,6 @@ def get_user_activities(user_id: int) -> list[dict[str, object]]:
         ).fetchall()
 
     return [dict(row) for row in rows]
-
-
-# Called by the daily check-in form to save wellness feedback.
-@router.post("/checkin")
-def save_checkin(payload: CheckinRequest) -> dict[str, str]:
-    """Save a daily check-in for a user."""
-    with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO daily_checkins (
-                user_id,
-                date,
-                sleep_quality,
-                soreness,
-                energy,
-                life_stress,
-                notes
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload.user_id,
-                payload.date,
-                payload.sleep_quality,
-                payload.soreness,
-                payload.energy,
-                payload.life_stress,
-                payload.notes,
-            ),
-        )
-        connection.commit()
-
-    return {"message": "Check-in saved"}
 
 
 # Called by chat UI to send a message and get a coach reply.
