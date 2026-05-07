@@ -19,6 +19,19 @@ DISCIPLINE_COLORS = {"swim": "#1f77b4", "bike": "#ff7f0e", "run": "#d62728"}
 st.set_page_config(layout="wide", page_title="TriFirst", page_icon="🏊")
 
 with st.sidebar:
+    if st.button("🔄 Sync Strava"):
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/sync/strava",
+                json={"user_id": USER_ID},
+                timeout=45,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            st.success(f"Strava sync complete ({payload.get('activities_added', 0)} activities added)")
+        except requests.RequestException as exc:
+            st.error(f"Could not sync Strava: {exc}")
+
     if st.button("🔄 Sync Garmin"):
         try:
             response = requests.post(
