@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException  # HTTPException returns a clean HTTP error response (like 404 or 400).
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel  # BaseModel validates request JSON and converts it into typed Python objects.
+from passlib.context import CryptContext
 
 from trifirst.config import (
     APP_NAME,
@@ -25,9 +26,37 @@ from trifirst.integrations.strava import (
 )
 
 router = APIRouter()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Imported per API contract; useful for debugging configuration in this module scope.
 _ = DATABASE_PATH
+
+
+
+class RegisterRequest(BaseModel):
+    """Request body for creating a new user account."""
+
+    name: str
+    email: str
+    username: str
+    password: str
+    age: int | None = None
+
+
+class LoginRequest(BaseModel):
+    """Request body for user login."""
+
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Response body returned for successful login."""
+
+    user_id: int
+    name: str
+    username: str
+    message: str
 
 
 class SyncRequest(BaseModel):
@@ -87,6 +116,66 @@ class FitnessBackgroundRequest(BaseModel):
     bike_level: str
     run_level: str
     weekly_hours_available: float
+
+
+
+@router.post("/auth/register")
+def register_user(payload: RegisterRequest) -> dict[str, int | str]:
+    """Create a new user account with a securely hashed password."""
+    with get_connection() as connection:
+        existing = connection.execute(
+            "SELECT id FROM users WHERE username = ? OR email = ?",
+            (payload.username, payload.email),
+        ).fetchone()
+        if existing:
+            raise HTTPException(status_code=400, detail="Username or email already taken")
+
+        password_hash = pwd_context.hash(payload.password)
+        cursor = connection.execute(
+            """
+            INSERT INTO users (name, email, username, password_hash, age)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (payload.name, payload.email, payload.username, password_hash, payload.age),
+        )
+        connection.commit()
+
+    return {"message": "Account created", "user_id": cursor.lastrowid}
+
+
+@router.post("/auth/login", response_model=LoginResponse)
+def login_user(payload: LoginRequest) -> LoginResponse:
+    """Authenticate a user by username and password."""
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT id, name, username, password_hash FROM users WHERE username = ?",
+            (payload.username,),
+        ).fetchone()
+
+    if not row or not row["password_hash"] or not pwd_context.verify(payload.password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    return LoginResponse(
+        user_id=row["id"],
+        name=row["name"],
+        username=row["username"],
+        message="Login successful",
+    )
+
+
+@router.get("/auth/user/{user_id}")
+def get_auth_user(user_id: int) -> dict[str, object]:
+    """Return account details for a single user by id."""
+    with get_connection() as connection:
+        row = connection.execute(
+            "SELECT name, username, email, age FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return dict(row)
 
 
 # Health endpoint used by monitoring tools and uptime checks to confirm the API is running.

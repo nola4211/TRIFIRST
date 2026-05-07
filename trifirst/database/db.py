@@ -31,4 +31,19 @@ def init_db() -> None:
     with get_connection() as connection:
         # executescript runs multiple SQL statements in one call.
         connection.executescript(schema_sql)
+        migrate_add_auth_columns()
+        connection.commit()
+
+
+def migrate_add_auth_columns() -> None:
+    """Add username and password_hash columns to users if missing."""
+    with get_connection() as connection:
+        try:
+            connection.execute("ALTER TABLE users ADD COLUMN username TEXT")
+        except Exception:
+            pass
+        try:
+            connection.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        except Exception:
+            pass
         connection.commit()
