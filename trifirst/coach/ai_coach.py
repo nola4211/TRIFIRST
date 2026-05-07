@@ -70,17 +70,6 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         (user_id,),
     ).fetchall()
 
-    checkins = db_conn.execute(
-        """
-        SELECT date, sleep_quality, energy, soreness, life_stress
-        FROM daily_checkins
-        WHERE user_id = ?
-        ORDER BY date DESC, id DESC
-        LIMIT 7
-        """,
-        (user_id,),
-    ).fetchall()
-
     now_utc = datetime.now(timezone.utc)
     week_start = (now_utc - timedelta(days=now_utc.weekday())).date().isoformat()
     weekly_volume = db_conn.execute(
@@ -128,17 +117,6 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
             )
     else:
         lines.append("- No activities logged")
-
-    lines.append("Last 7 daily check-ins:")
-    if checkins:
-        for row in checkins:
-            lines.append(
-                f"- {row['date']}: sleep_quality={row['sleep_quality']}, energy={row['energy']}, "
-                f"soreness={row['soreness']}, life_stress={row['life_stress']}"
-            )
-    else:
-        lines.append("- No check-ins logged")
-
 
     lines.append("Last 7 days Garmin recovery data:")
     if garmin_rows:
@@ -275,19 +253,6 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
     total_hours = sum(item["total_hours"] for item in by_discipline.values())
     total_sessions = sum(item["session_count"] for item in by_discipline.values())
 
-    checkin_row = db_conn.execute(
-        """
-        SELECT
-            AVG(sleep_quality) AS avg_sleep_quality,
-            AVG(energy) AS avg_energy,
-            AVG(soreness) AS avg_soreness,
-            AVG(life_stress) AS avg_life_stress
-        FROM daily_checkins
-        WHERE user_id = ? AND date BETWEEN ? AND ?
-        """,
-        (user_id, week_start, week_end),
-    ).fetchone()
-
     race_goal_row = db_conn.execute(
         """
         SELECT race_name, race_date, race_distance
@@ -315,12 +280,6 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
             "total_hours": total_hours,
             "total_sessions": total_sessions,
         },
-        "checkins": {
-            "avg_sleep_quality": float(checkin_row["avg_sleep_quality"]) if checkin_row and checkin_row["avg_sleep_quality"] is not None else None,
-            "avg_energy": float(checkin_row["avg_energy"]) if checkin_row and checkin_row["avg_energy"] is not None else None,
-            "avg_soreness": float(checkin_row["avg_soreness"]) if checkin_row and checkin_row["avg_soreness"] is not None else None,
-            "avg_life_stress": float(checkin_row["avg_life_stress"]) if checkin_row and checkin_row["avg_life_stress"] is not None else None,
-        },
         "race_goal": {
             "race_name": race_goal_row["race_name"] if race_goal_row else None,
             "race_date": race_goal_row["race_date"] if race_goal_row else None,
@@ -338,7 +297,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
         "In 'What's Working', give one positive observation. "
         "In 'Focus for Next Week', give one specific actionable recommendation. "
         "Use the athlete's name naturally. Keep the total response under 150 words. "
-        "If no activities were logged, stay encouraging and focus on a clear next-week recommendation."
+        "If no activities were logged, stay encouraging and focus on a clear next-week recommendation. Do not reference daily check-in data."
     )
 
     user_prompt = f"Weekly summary data:\n{summary}"
