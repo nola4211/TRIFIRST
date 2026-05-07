@@ -42,6 +42,7 @@ with st.sidebar:
         except requests.RequestException as exc:
             st.error(f"Could not sync Garmin: {exc}")
 
+# Load chat history from database on first load
 if "coach_chat_history" not in st.session_state:
     history = api_get(f"/coach/history/{USER_ID}")
     st.session_state.coach_chat_history = [
@@ -57,16 +58,9 @@ with left_col:
     st.title("🏅 Coach Tri")
     st.caption("Your personal AI triathlon coach")
 
-    for entry in st.session_state.coach_chat_history:
-        with st.chat_message(entry["role"]):
-            st.markdown(entry["content"])
-
+    # Chat input at the TOP — processes new messages first
     user_message = st.chat_input("Message Coach Tri...")
     if user_message:
-        st.session_state.coach_chat_history.append({"role": "user", "content": user_message})
-        with st.chat_message("user"):
-            st.markdown(user_message)
-
         with st.spinner("Coach Tri is thinking..."):
             try:
                 response = requests.post(
@@ -80,9 +74,20 @@ with left_col:
                 coach_reply = f"I couldn't reach the coach service: {exc}"
                 st.error(f"Chat request failed: {exc}")
 
+        # Append both messages to history
+        st.session_state.coach_chat_history.append({"role": "user", "content": user_message})
         st.session_state.coach_chat_history.append({"role": "assistant", "content": coach_reply})
-        with st.chat_message("assistant"):
-            st.markdown(coach_reply)
+
+    # Show last 5 messages only (most recent at bottom for natural chat flow)
+    recent_messages = st.session_state.coach_chat_history[-10:]  # 5 exchanges = 10 messages
+    for entry in recent_messages:
+        with st.chat_message(entry["role"]):
+            st.markdown(entry["content"])
+
+    # Show how many older messages are hidden
+    total = len(st.session_state.coach_chat_history)
+    if total > 10:
+        st.caption(f"Showing last 5 exchanges. {(total - 10) // 2} older exchanges not shown.")
 
 with right_col:
     st.subheader("📋 About You")
@@ -155,7 +160,6 @@ with right_col:
     st.markdown("### Summary")
     st.info(
         f"Days until race: **{days_until}**\n\n"
-        f"Current week km — Swim: **{swim_km:.1f}**, Bike: **{bike_km:.1f}**, Run: **{run_km:.1f}**\n\n"
-        f"Latest body battery: **{latest_bb}**\n\n"
-        f"Latest resting HR: **{latest_rhr}**"
+        f"This week — Swim: **{swim_km:.1f}km**, Bike: **{bike_km:.1f}km**, Run: **{run_km:.1f}km**\n\n"
+        f"Body battery: **{latest_bb}**  |  Resting HR: **{latest_rhr}**"
     )
