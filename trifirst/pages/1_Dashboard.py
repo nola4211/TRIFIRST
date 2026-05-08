@@ -339,6 +339,10 @@ st.page_link("pages/2_Coach_Tri.py", label="💬 Chat with Coach Tri →")
 
 # --- Sidebar sync buttons ---
 st.sidebar.title("⚙️ TriFirst")
+st.sidebar.link_button(
+    "🔗 Connect Strava",
+    url=f"{API_BASE_URL}/auth/strava?user_id={USER_ID}",
+)
 
 if st.sidebar.button("🔄 Sync Strava", key="sync_strava_btn"):
     try:

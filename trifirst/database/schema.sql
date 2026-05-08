@@ -59,6 +59,17 @@ CREATE TABLE IF NOT EXISTS strava_tokens (
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
+-- Stores Garmin login credentials by user.
+-- NOTE: Password is stored in plain text temporarily for this personal app.
+CREATE TABLE IF NOT EXISTS garmin_credentials (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL UNIQUE,
+    email TEXT NOT NULL,
+    password TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
 -- Stores per-week training totals and optional AI-generated summary text.
 CREATE TABLE IF NOT EXISTS weekly_summaries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

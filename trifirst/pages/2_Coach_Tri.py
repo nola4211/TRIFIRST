@@ -30,6 +30,29 @@ def api_get(path: str):
 
 
 with st.sidebar:
+    with st.expander("🔗 Connect Garmin", expanded=False):
+        credentials_payload = api_get(f"/garmin/credentials/{USER_ID}") or {}
+        existing_email = credentials_payload.get("email", "") if credentials_payload.get("connected") else ""
+        garmin_email = st.text_input("Email", value=existing_email, key="garmin_email_input")
+        garmin_password = st.text_input("Password", type="password", key="garmin_password_input")
+        if st.button("Save Garmin Credentials", key="save_garmin_credentials_btn"):
+            try:
+                response = requests.post(
+                    f"{API_BASE_URL}/garmin/credentials",
+                    json={"user_id": USER_ID, "email": garmin_email, "password": garmin_password},
+                    timeout=20,
+                )
+                response.raise_for_status()
+                st.success("Garmin credentials saved")
+                credentials_payload = api_get(f"/garmin/credentials/{USER_ID}") or {}
+            except requests.RequestException as exc:
+                st.error(f"Could not save Garmin credentials: {exc}")
+
+        if credentials_payload.get("connected"):
+            st.success("✅ Connected")
+        else:
+            st.warning("⚠️ Not connected")
+
     if st.button("🔄 Sync Strava", key="coach_sync_strava"):
         try:
             response = requests.post(f"{API_BASE_URL}/sync/strava", json={"user_id": USER_ID}, timeout=45)
