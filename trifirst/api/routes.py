@@ -10,8 +10,6 @@ from passlib.context import CryptContext
 from trifirst.config import (
     APP_NAME,
     DATABASE_PATH,
-    GARMIN_EMAIL,
-    GARMIN_PASSWORD,
     STRAVA_CLIENT_ID,
     STRAVA_CLIENT_SECRET,
 )
@@ -72,6 +70,14 @@ class GarminSyncRequest(BaseModel):
 
     user_id: int
     days: int = 7
+
+
+class GarminCredentialsRequest(BaseModel):
+    """Request body for storing Garmin credentials per user."""
+
+    user_id: int
+    email: str
+    password: str
 
 class ChatRequest(BaseModel):
     """Request body for AI coaching chat."""
@@ -187,19 +193,20 @@ def health_check() -> dict[str, str]:
 
 # Starts Strava connection flow; typically called when a user clicks "Connect Strava".
 @router.get("/auth/strava")
-def auth_strava() -> RedirectResponse:
+def auth_strava(user_id: int = 1) -> RedirectResponse:
     """Redirect the user to Strava OAuth authorization."""
-    return RedirectResponse(authorize_url(STRAVA_CLIENT_ID))
+    return RedirectResponse(authorize_url(STRAVA_CLIENT_ID, state=str(user_id)))
 
 
 # Receives Strava redirect after login and stores tokens for this user.
 @router.get("/auth/strava/callback")
 def auth_strava_callback(code: str, state: str | None = None) -> dict[str, int | str]:
     """Exchange Strava auth code for tokens and save them for the user."""
-    del state  # reserved for future CSRF validation once real user auth is implemented
-
     token_dict = exchange_token(STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, code)
-    user_id = 1
+    try:
+        user_id = int(state) if state is not None else 1
+    except (TypeError, ValueError):
+        user_id = 1
 
     with get_connection() as connection:
         save_tokens(user_id, token_dict, connection)
@@ -375,13 +382,65 @@ def get_weekly_digests(user_id: int) -> list[dict[str, object]]:
 @router.post("/sync/garmin")
 def sync_garmin_stats(payload: GarminSyncRequest) -> dict[str, int | str]:
     """Sync Garmin daily recovery stats for a user."""
-    client = GarminClient(GARMIN_EMAIL, GARMIN_PASSWORD)
+    with get_connection() as connection:
+        credential_row = connection.execute(
+            """
+            SELECT email, password
+            FROM garmin_credentials
+            WHERE user_id = ?
+            LIMIT 1
+            """,
+            (payload.user_id,),
+        ).fetchone()
+        if not credential_row:
+            raise HTTPException(
+                status_code=400,
+                detail="No Garmin credentials found for this user. Save credentials first.",
+            )
+
+    client = GarminClient(credential_row["email"], credential_row["password"])
     client.connect()
 
     with get_connection() as connection:
         days_synced = client.sync_stats(payload.user_id, connection, payload.days)
 
     return {"message": "Garmin sync complete", "days_synced": days_synced}
+
+
+@router.post("/garmin/credentials")
+def save_garmin_credentials(payload: GarminCredentialsRequest) -> dict[str, str]:
+    """Upsert Garmin credentials for a user."""
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO garmin_credentials (user_id, email, password)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                email = excluded.email,
+                password = excluded.password
+            """,
+            (payload.user_id, payload.email, payload.password),
+        )
+        connection.commit()
+    return {"message": "Garmin credentials saved"}
+
+
+@router.get("/garmin/credentials/{user_id}")
+def get_garmin_credentials(user_id: int) -> dict[str, object]:
+    """Return Garmin connection status (and email when connected) for a user."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT email
+            FROM garmin_credentials
+            WHERE user_id = ?
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    if not row:
+        return {"connected": False}
+    return {"email": row["email"], "connected": True}
 
 
 @router.get("/garmin/stats/{user_id}")
