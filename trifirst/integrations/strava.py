@@ -24,28 +24,16 @@ class StravaIntegrationError(Exception):
     """Raised when Strava API or integration operations fail."""
 
 
-def authorize_url(client_id: str) -> str:
-    """Build the Strava OAuth2 authorization URL for the given client ID.
-
-    The generated URL requests the ``activity:read_all`` scope and uses
-    ``response_type=code`` so the user can be redirected back with an
-    authorization code.
-
-    Args:
-        client_id: Strava application client ID.
-
-    Returns:
-        Fully formed Strava authorization URL.
-    """
-    query = urlencode(
-        {
-            "client_id": client_id,
-            "response_type": "code",
-            "approval_prompt": "auto",
-            "scope": "activity:read_all",
-        }
-    )
-    return f"{STRAVA_AUTHORIZE_URL}?{query}"
+def authorize_url(client_id: str, state: str | None = None) -> str:
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "approval_prompt": "auto",
+        "scope": "activity:read_all",
+    }
+    if state is not None:
+        params["state"] = state
+    return f"{STRAVA_AUTHORIZE_URL}?{urlencode(params)}"
 
 
 def _post_token(payload: dict[str, Any]) -> dict[str, Any]:
