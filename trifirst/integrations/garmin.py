@@ -7,6 +7,8 @@ import sqlite3
 
 from garminconnect import Garmin
 from garminconnect import GarminConnectAuthenticationError
+#for chache so it doesnt log into garmin every sync
+_garmin_session_cache: dict = {}
 
 
 class GarminClient:
@@ -24,23 +26,16 @@ class GarminClient:
         self.client: Garmin | None = None
 
     def connect(self) -> None:
-        """Authenticate with Garmin Connect and store the logged-in client.
-
-        Raises:
-            ValueError: If credentials are missing.
-            RuntimeError: If authentication fails.
-        """
-        if not self.email or not self.password:
-            raise ValueError("Garmin credentials are missing. Set GARMIN_EMAIL and GARMIN_PASSWORD.")
-
+        """Authenticate with Garmin Connect, reusing cached session if available."""
+        cache_key = self.email
+        if cache_key in _garmin_session_cache:
+            self.client = _garmin_session_cache[cache_key]
+            return
         try:
-            client = Garmin(self.email, self.password)
-            client.login()
-            self.client = client
-        except GarminConnectAuthenticationError as exc:
-            raise RuntimeError("Garmin login failed. Check GARMIN_EMAIL/GARMIN_PASSWORD.") from exc
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"Garmin login failed: {exc}") from exc
+            self.client.login()
+            _garmin_session_cache[cache_key] = self.client
+        except Exception as exc:
+            raise RuntimeError("Garmin login failed. Check credentials.") from exc
 
     def get_daily_stats(self, date_str: str) -> dict[str, int | float | str | None]:
         """Fetch Garmin recovery stats for a single day.
