@@ -107,14 +107,13 @@ with left_col:
         st.session_state.coach_chat_history.append({"role": "user", "content": user_message})
         st.session_state.coach_chat_history.append({"role": "assistant", "content": coach_reply})
 
-    # Show last 5 messages only (most recent at bottom for natural chat flow)
-    recent_messages = st.session_state.coach_chat_history[-10:]  # 5 exchanges = 10 messages
-    for entry in recent_messages:
+    # Show last 5 exchanges (10 messages), newest at top near chat input
+    total = len(st.session_state.coach_chat_history)
+    recent_messages = st.session_state.coach_chat_history[-10:]
+    for entry in reversed(recent_messages):
         with st.chat_message(entry["role"]):
             st.markdown(entry["content"])
 
-    # Show how many older messages are hidden
-    total = len(st.session_state.coach_chat_history)
     if total > 10:
         st.caption(f"Showing last 5 exchanges. {(total - 10) // 2} older exchanges not shown.")
 
