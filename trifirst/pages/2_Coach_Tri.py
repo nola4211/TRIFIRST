@@ -30,29 +30,6 @@ def api_get(path: str):
 
 
 with st.sidebar:
-    with st.expander("🔗 Connect Garmin", expanded=False):
-        credentials_payload = api_get(f"/garmin/credentials/{USER_ID}") or {}
-        existing_email = credentials_payload.get("email", "") if credentials_payload.get("connected") else ""
-        garmin_email = st.text_input("Email", value=existing_email, key="garmin_email_input")
-        garmin_password = st.text_input("Password", type="password", key="garmin_password_input")
-        if st.button("Save Garmin Credentials", key="save_garmin_credentials_btn"):
-            try:
-                response = requests.post(
-                    f"{API_BASE_URL}/garmin/credentials",
-                    json={"user_id": USER_ID, "email": garmin_email, "password": garmin_password},
-                    timeout=20,
-                )
-                response.raise_for_status()
-                st.success("Garmin credentials saved")
-                credentials_payload = api_get(f"/garmin/credentials/{USER_ID}") or {}
-            except requests.RequestException as exc:
-                st.error(f"Could not save Garmin credentials: {exc}")
-
-        if credentials_payload.get("connected"):
-            st.success("✅ Connected")
-        else:
-            st.warning("⚠️ Not connected")
-
     if st.button("🔄 Sync Strava", key="coach_sync_strava"):
         try:
             response = requests.post(f"{API_BASE_URL}/sync/strava", json={"user_id": USER_ID}, timeout=45)
@@ -61,15 +38,6 @@ with st.sidebar:
             st.success(f"Strava sync complete ({payload.get('activities_added', 0)} activities added)")
         except requests.RequestException as exc:
             st.error(f"Could not sync Strava: {exc}")
-
-    if st.button("🔄 Sync Garmin", key="coach_sync_garmin"):
-        try:
-            response = requests.post(f"{API_BASE_URL}/sync/garmin", json={"user_id": USER_ID, "days": 7}, timeout=45)
-            response.raise_for_status()
-            payload = response.json()
-            st.success(f"Garmin sync complete ({payload.get('days_synced', 0)} days synced)")
-        except requests.RequestException as exc:
-            st.error(f"Could not sync Garmin: {exc}")
 
 # Load chat history from database on first load
 if "coach_chat_history" not in st.session_state:
@@ -162,8 +130,6 @@ with right_col:
 
     race_goal = api_get(f"/race-goal/{USER_ID}") or {}
     activities = api_get(f"/activities/{USER_ID}") or []
-    garmin_stats = api_get(f"/garmin/stats/{USER_ID}") or []
-
     days_until = "N/A"
     if race_goal.get("race_date"):
         days_until = (pd.to_datetime(race_goal["race_date"]).date() - date.today()).days
@@ -178,18 +144,10 @@ with right_col:
         bike_km = float(week_df.loc[week_df["activity_type"] == "bike", "distance_km"].fillna(0).sum())
         run_km = float(week_df.loc[week_df["activity_type"] == "run", "distance_km"].fillna(0).sum())
 
-    latest_bb = "N/A"
-    latest_rhr = "N/A"
-    if garmin_stats:
-        latest = garmin_stats[0]
-        latest_bb = latest.get("body_battery_high") if latest.get("body_battery_high") is not None else "N/A"
-        latest_rhr = latest.get("resting_hr") if latest.get("resting_hr") is not None else "N/A"
-
     st.markdown("### Summary")
     st.info(
         f"Days until race: **{days_until}**\n\n"
-        f"This week — Swim: **{swim_km:.1f}km**, Bike: **{bike_km:.1f}km**, Run: **{run_km:.1f}km**\n\n"
-        f"Body battery: **{latest_bb}**  |  Resting HR: **{latest_rhr}**"
+        f"This week — Swim: **{swim_km:.1f}km**, Bike: **{bike_km:.1f}km**, Run: **{run_km:.1f}km**"
     )
 
 

@@ -8,5 +8,4 @@ groq
 streamlit
 plotly
 
-garminconnect
 passlib[bcrypt]

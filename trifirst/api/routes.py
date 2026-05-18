@@ -15,7 +15,6 @@ from trifirst.config import (
 )
 from trifirst.database.db import get_connection
 from trifirst.coach.ai_coach import chat, generate_weekly_digest, _most_recent_completed_week_window
-from trifirst.integrations.garmin import GarminClient
 from trifirst.integrations.strava import (
     authorize_url,
     exchange_token,
@@ -64,20 +63,6 @@ class SyncRequest(BaseModel):
 
 
 
-
-class GarminSyncRequest(BaseModel):
-    """Request body for syncing Garmin wellness metrics."""
-
-    user_id: int
-    days: int = 7
-
-
-class GarminCredentialsRequest(BaseModel):
-    """Request body for storing Garmin credentials per user."""
-
-    user_id: int
-    email: str
-    password: str
 
 class ChatRequest(BaseModel):
     """Request body for AI coaching chat."""
@@ -372,90 +357,6 @@ def get_weekly_digests(user_id: int) -> list[dict[str, object]]:
             WHERE user_id = ?
             ORDER BY week_start_date DESC, id DESC
             LIMIT 4
-            """,
-            (user_id,),
-        ).fetchall()
-
-    return [dict(row) for row in rows]
-
-
-@router.post("/sync/garmin")
-def sync_garmin_stats(payload: GarminSyncRequest) -> dict[str, int | str]:
-    """Sync Garmin daily recovery stats for a user."""
-    with get_connection() as connection:
-        credential_row = connection.execute(
-            """
-            SELECT email, password
-            FROM garmin_credentials
-            WHERE user_id = ?
-            LIMIT 1
-            """,
-            (payload.user_id,),
-        ).fetchone()
-        if not credential_row:
-            raise HTTPException(
-                status_code=400,
-                detail="No Garmin credentials found for this user. Save credentials first.",
-            )
-
-    client = GarminClient(credential_row["email"], credential_row["password"])
-    client.connect()
-
-    with get_connection() as connection:
-        days_synced = client.sync_stats(payload.user_id, connection, payload.days)
-
-    return {"message": "Garmin sync complete", "days_synced": days_synced}
-
-
-@router.post("/garmin/credentials")
-def save_garmin_credentials(payload: GarminCredentialsRequest) -> dict[str, str]:
-    """Upsert Garmin credentials for a user."""
-    with get_connection() as connection:
-        connection.execute(
-            """
-            INSERT INTO garmin_credentials (user_id, email, password)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                email = excluded.email,
-                password = excluded.password
-            """,
-            (payload.user_id, payload.email, payload.password),
-        )
-        connection.commit()
-    return {"message": "Garmin credentials saved"}
-
-
-@router.get("/garmin/credentials/{user_id}")
-def get_garmin_credentials(user_id: int) -> dict[str, object]:
-    """Return Garmin connection status (and email when connected) for a user."""
-    with get_connection() as connection:
-        row = connection.execute(
-            """
-            SELECT email
-            FROM garmin_credentials
-            WHERE user_id = ?
-            LIMIT 1
-            """,
-            (user_id,),
-        ).fetchone()
-    if not row:
-        return {"connected": False}
-    return {"email": row["email"], "connected": True}
-
-
-@router.get("/garmin/stats/{user_id}")
-def get_garmin_stats(user_id: int) -> list[dict[str, object]]:
-    """Return last 14 days of Garmin wellness stats for a user."""
-    with get_connection() as connection:
-        rows = connection.execute(
-            """
-            SELECT user_id, date, body_battery_high, body_battery_low, resting_hr,
-                   avg_sleep_hr, hrv_avg, hrv_status, body_battery_change,
-                   avg_resting_hr_7day, steps, updated_at
-            FROM garmin_daily_stats
-            WHERE user_id = ?
-            ORDER BY date DESC
-            LIMIT 14
             """,
             (user_id,),
         ).fetchall()
