@@ -22,11 +22,13 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
     Returns:
         A multi-line context summary string for prompt injection.
     """
+    # Fetch the base user profile used to personalize prompts.
     user_row = db_conn.execute(
         "SELECT name, age FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
 
+    # Fetch the latest race goal to determine target distance and timeline.
     race_goal_row = db_conn.execute(
         """
         SELECT race_name, race_date, race_distance
@@ -39,6 +41,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
     ).fetchone()
 
 
+    # Fetch injury, limitation, and scheduling context for coaching safety.
     athlete_profile_row = db_conn.execute(
         """
         SELECT injury_history, physical_limitations, preferred_training_days, training_days_notes
@@ -49,6 +52,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         (user_id,),
     ).fetchone()
 
+    # Fetch the latest self-reported discipline levels and available hours.
     fitness_row = db_conn.execute(
         """
         SELECT swim_level, bike_level, run_level, weekly_hours_available
@@ -60,6 +64,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         (user_id,),
     ).fetchone()
 
+    # Fetch recent activities to ground advice in current training data.
     activities = db_conn.execute(
         """
         SELECT date, activity_type, distance_km, duration_mins, avg_hr
@@ -73,6 +78,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
 
     now_utc = datetime.now(timezone.utc)
     week_start = (now_utc - timedelta(days=now_utc.weekday())).date().isoformat()
+    # Fetch current-week discipline totals for concise prompt context.
     weekly_volume = db_conn.execute(
         """
         SELECT
@@ -148,6 +154,7 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     Returns:
         The assistant response text from the Groq model.
     """
+    # Fetch recent conversation history so Coach Tri stays contextual.
     history_rows = db_conn.execute(
         """
         SELECT role, message
@@ -163,10 +170,10 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
         (user_id,),
     ).fetchall()
 
-        # We build user context so the AI answers based on this athlete's real data, not generic advice.
+    # We build user context so the AI answers based on this athlete's real data, not generic advice.
     user_context = build_user_context(user_id, db_conn)
 
-        # The system prompt is the main instruction that sets the AI's role, tone, and safety rules.
+    # The system prompt is the main instruction that sets the AI's role, tone, and safety rules.
     system_prompt = (
     "Athlete context:\n"
     f"{user_context}\n\n"
@@ -251,13 +258,13 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     "specific effort levels using the zone system above."
     )
 
-        # Conversation history is previous messages; we include it so replies stay consistent and contextual.
+    # Conversation history is previous messages; we include it so replies stay consistent and contextual.
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend({"role": row["role"], "content": row["message"]} for row in history_rows)
     messages.append({"role": "user", "content": message})
 
     client = Groq(api_key=GROQ_API_KEY)
-        # This calls the Groq API to generate the assistant's next message from our prompt + history.
+    # This calls the Groq API to generate the assistant's next message from our prompt + history.
     completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages)
     assistant_text = completion.choices[0].message.content or ""
 
@@ -266,6 +273,7 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     if any(keyword in lowered for keyword in plan_keywords):
         proposed = propose_workouts(user_id, message, db_conn)
         if proposed:
+            # Save coach-proposed workouts for calendar review and confirmation.
             pending_cursor = db_conn.execute(
                 """
                 INSERT INTO pending_workouts (user_id, proposed_by, workouts_json, message)
@@ -276,10 +284,12 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
             pending_id = pending_cursor.lastrowid
             assistant_text = f"{assistant_text.rstrip()}\n\nPENDING_WORKOUTS_ID:{pending_id}"
 
+    # Persist the user chat message in the conversation history.
     db_conn.execute(
         "INSERT INTO coach_messages (user_id, role, message) VALUES (?, 'user', ?)",
         (user_id, message),
     )
+    # Persist the assistant response in the conversation history.
     db_conn.execute(
         "INSERT INTO coach_messages (user_id, role, message) VALUES (?, 'assistant', ?)",
         (user_id, assistant_text),
@@ -290,7 +300,16 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
 
 
 def propose_workouts(user_id: int, message: str, db_conn: sqlite3.Connection) -> list[dict[str, object]]:
-    """Generate a structured workout proposal list from Coach Tri."""
+    """Generate a structured workout proposal list from Coach Tri.
+
+    Args:
+        user_id: User id used to build training context.
+        message: Athlete request that triggered schedule generation.
+        db_conn: Active SQLite connection.
+
+    Returns:
+        List of proposed workout dictionaries, or an empty list when parsing fails.
+    """
     user_context = build_user_context(user_id, db_conn)
     prompt = (
         "You are Coach Tri. Build a 7-day triathlon training schedule using the athlete context and request. "
@@ -329,7 +348,14 @@ def propose_workouts(user_id: int, message: str, db_conn: sqlite3.Connection) ->
 
 
 def _most_recent_completed_week_window(today_utc: datetime | None = None) -> tuple[str, str]:
-    """Return ISO dates for the most recent completed Monday-Sunday week."""
+    """Return ISO dates for the most recent completed Monday-Sunday week.
+
+    Args:
+        today_utc: Optional current UTC datetime for deterministic tests.
+
+    Returns:
+        Tuple containing Monday start date and Sunday end date as ISO strings.
+    """
     now_utc = today_utc or datetime.now(timezone.utc)
     this_monday = (now_utc - timedelta(days=now_utc.weekday())).date()
     week_start = this_monday - timedelta(days=7)
@@ -338,12 +364,22 @@ def _most_recent_completed_week_window(today_utc: datetime | None = None) -> tup
 
 
 def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
-    """Generate and persist an AI weekly digest for the most recent completed week."""
+    """Generate and persist an AI weekly digest for the most recent completed week.
+
+    Args:
+        user_id: User id whose completed week should be summarized.
+        db_conn: Active SQLite connection.
+
+    Returns:
+        Generated digest text from the AI model.
+    """
     week_start, week_end = _most_recent_completed_week_window()
 
+    # Fetch the athlete name used in the generated weekly digest.
     user_row = db_conn.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
     athlete_name = user_row["name"] if user_row and user_row["name"] else "Athlete"
 
+    # Fetch aggregate swim, bike, and run totals for the completed week.
     discipline_rows = db_conn.execute(
         """
         SELECT
@@ -373,6 +409,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
     total_hours = sum(item["total_hours"] for item in by_discipline.values())
     total_sessions = sum(item["session_count"] for item in by_discipline.values())
 
+    # Fetch the next race goal to include days remaining in the weekly digest.
     race_goal_row = db_conn.execute(
         """
         SELECT race_name, race_date, race_distance
@@ -432,6 +469,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
     )
     ai_summary_text = (completion.choices[0].message.content or "").strip()
 
+    # Save the generated weekly digest and aggregate totals for dashboard history.
     db_conn.execute(
         """
         INSERT INTO weekly_summaries (

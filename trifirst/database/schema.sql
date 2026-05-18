@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS fitness_background (
 CREATE TABLE IF NOT EXISTS activities (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    source TEXT NOT NULL CHECK (source IN ('strava', 'garmin', 'manual')), -- Allowed values: strava, garmin, manual
+    source TEXT NOT NULL CHECK (source IN ('strava', 'manual')), -- Allowed values: strava, manual
     activity_type TEXT NOT NULL CHECK (activity_type IN ('swim', 'bike', 'run')), -- Allowed values: swim, bike, run
     date TEXT NOT NULL,
     duration_mins REAL,

@@ -3,47 +3,107 @@
 SQLite is a lightweight database engine that stores all data in a single local file.
 """
 
+from __future__ import annotations
+
+import logging
 import sqlite3
 from pathlib import Path
 
 from trifirst.config import DATABASE_PATH
 
+logger = logging.getLogger(__name__)
 
-# Return a database connection object we can use to run SQL queries.
+# Tables that must exist for the TriFirst application to run correctly.
+EXPECTED_TABLES = (
+    "users",
+    "race_goals",
+    "fitness_background",
+    "activities",
+    "strava_tokens",
+    "weekly_summaries",
+    "coach_messages",
+    "athlete_profile",
+    "scheduled_workouts",
+    "pending_workouts",
+)
+
+
 def get_connection() -> sqlite3.Connection:
-    """Return a SQLite connection for the configured database file."""
-    # Open (or create) the SQLite database file configured for this app.
-    connection = sqlite3.connect(DATABASE_PATH)
-    # row_factory makes each row behave like a dictionary (column name -> value).
+    """Return a SQLite connection for the configured database file.
+
+    Args:
+        None.
+
+    Returns:
+        A SQLite connection configured with row dictionaries, a connection timeout,
+        and cross-thread access enabled for web-server stability.
+    """
+    # Open or create the configured SQLite database with a timeout for busy writes.
+    connection = sqlite3.connect(DATABASE_PATH, timeout=30.0, check_same_thread=False)
+    # Return rows as dictionary-like sqlite3.Row objects for readable column access.
     connection.row_factory = sqlite3.Row
     return connection
 
 
-# Create database tables from the schema file if they do not already exist.
 def init_db() -> None:
-    """Initialize the SQLite database using the SQL schema file."""
-    # Build the path to schema.sql in this same folder.
+    """Initialize the SQLite database using the SQL schema file.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
+    # Load and execute the schema file that defines all application tables.
     schema_path = Path(__file__).with_name("schema.sql")
-    # Read the full SQL schema text from disk.
     schema_sql = schema_path.read_text(encoding="utf-8")
 
-    # Open a connection, run schema SQL, and save changes.
     with get_connection() as connection:
-        # executescript runs multiple SQL statements in one call.
         connection.executescript(schema_sql)
-        migrate_add_auth_columns()
         connection.commit()
+
+    migrate_add_auth_columns()
 
 
 def migrate_add_auth_columns() -> None:
-    """Add username and password_hash columns to users if missing."""
+    """Add legacy authentication columns to existing user tables when missing.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
     with get_connection() as connection:
-        try:
+        # Check current user columns before applying idempotent migrations.
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(users)").fetchall()}
+        if "username" not in columns:
             connection.execute("ALTER TABLE users ADD COLUMN username TEXT")
-        except Exception:
-            pass
-        try:
+        if "password_hash" not in columns:
             connection.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-        except Exception:
-            pass
         connection.commit()
+
+
+def check_db_health() -> dict[str, bool]:
+    """Verify that every expected application table exists.
+
+    Args:
+        None.
+
+    Returns:
+        A dictionary mapping expected table names to whether they exist in SQLite.
+    """
+    with get_connection() as connection:
+        # Fetch all user-defined table names from SQLite metadata.
+        rows = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+
+    existing_tables = {row["name"] for row in rows}
+    health = {table_name: table_name in existing_tables for table_name in EXPECTED_TABLES}
+    missing_tables = [table_name for table_name, exists in health.items() if not exists]
+    if missing_tables:
+        logger.warning("Missing database tables: %s", ", ".join(missing_tables))
+    else:
+        logger.info("Database health check passed for %s tables", len(EXPECTED_TABLES))
+    return health

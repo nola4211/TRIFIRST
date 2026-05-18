@@ -25,6 +25,15 @@ class StravaIntegrationError(Exception):
 
 
 def authorize_url(client_id: str, state: str | None = None) -> str:
+    """Build the Strava OAuth authorization URL.
+
+    Args:
+        client_id: Strava application client ID.
+        state: Optional opaque state, used here to carry the authenticated user id.
+
+    Returns:
+        Fully qualified Strava authorization URL.
+    """
     params = {
         "client_id": client_id,
         "response_type": "code",
@@ -139,9 +148,11 @@ def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Conne
             f"Cannot save tokens: missing fields {', '.join(missing)}"
         )
 
+    # Fetch an existing token row so we can update instead of duplicating tokens.
     cursor = db_conn.execute("SELECT id FROM strava_tokens WHERE user_id = ?", (user_id,))
     row = cursor.fetchone()
     if row:
+        # Update the existing Strava token row for this user.
         db_conn.execute(
             """
             UPDATE strava_tokens
@@ -156,6 +167,7 @@ def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Conne
             ),
         )
     else:
+        # Insert the first Strava token row for this user.
         db_conn.execute(
             """
             INSERT INTO strava_tokens (user_id, access_token, refresh_token, expires_at)
@@ -182,6 +194,7 @@ def load_tokens(user_id: int, db_conn: sqlite3.Connection) -> dict[str, Any] | N
         Token dictionary with ``access_token``, ``refresh_token``, and ``expires_at`` if found;
         otherwise ``None``.
     """
+    # Fetch stored Strava OAuth tokens for the user.
     row = db_conn.execute(
         """
         SELECT access_token, refresh_token, expires_at
@@ -374,7 +387,7 @@ def sync_activities(
         if parsed is None:
             continue
 
-                # This duplicate check skips inserting an activity we already saved earlier.
+        # This duplicate check skips inserting an activity we already saved earlier.
         duplicate = db_conn.execute(
             """
             SELECT 1
@@ -393,6 +406,7 @@ def sync_activities(
         if duplicate:
             continue
 
+        # Insert a newly synced Strava activity into the local activities table.
         db_conn.execute(
             """
             INSERT INTO activities (

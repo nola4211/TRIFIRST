@@ -1,3 +1,5 @@
+"""Coach Tri chat and athlete-profile page for the Streamlit app."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -21,6 +23,14 @@ pending_marker_notice = False
 
 
 def api_get(path: str):
+    """Send a GET request to the API and return decoded JSON.
+
+    Args:
+        path: API path beginning with a slash.
+
+    Returns:
+        Decoded JSON payload, or None when the request fails.
+    """
     try:
         response = requests.get(f"{API_BASE_URL}{path}", timeout=20)
         response.raise_for_status()
@@ -30,6 +40,7 @@ def api_get(path: str):
         return None
 
 
+# Sidebar actions use the shared sync and logout pattern.
 with st.sidebar:
     if st.button("🔄 Sync Strava", key="coach_sync_strava"):
         try:
@@ -40,23 +51,25 @@ with st.sidebar:
         except requests.RequestException as exc:
             st.error(f"Could not sync Strava: {exc}")
 
-# Load chat history from database on first load
+# Load chat history from the API on first page render.
 if "coach_chat_history" not in st.session_state:
     history = api_get(f"/coach/history/{USER_ID}")
     st.session_state.coach_chat_history = [
         {"role": row.get("role", "assistant"), "content": row.get("message", "")} for row in (history or [])
     ]
 
+# Cache athlete profile fields while the user edits this page.
 if "athlete_profile" not in st.session_state:
     st.session_state.athlete_profile = api_get(f"/athlete-profile/{USER_ID}") or {}
 
+# Split chat and profile content into primary and secondary columns.
 left_col, right_col = st.columns([2, 1])
 
 with left_col:
     st.title("🏅 Coach Tri")
     st.caption("Your personal AI triathlon coach")
 
-    # Chat input at the TOP — processes new messages first
+    # Process new chat messages before rendering recent history.
     user_message = st.chat_input("Message Coach Tri...")
     if user_message:
         with st.spinner("Coach Tri is thinking..."):
@@ -76,11 +89,11 @@ with left_col:
                 coach_reply = f"I couldn't reach the coach service: {exc}"
                 st.error(f"Chat request failed: {exc}")
 
-        # Append both messages to history
+        # Append both user and assistant messages to local session history.
         st.session_state.coach_chat_history.append({"role": "user", "content": user_message})
         st.session_state.coach_chat_history.append({"role": "assistant", "content": coach_reply})
 
-    # Show last 5 exchanges (10 messages), newest at top near chat input
+    # Show the last five exchanges with newest content nearest the input.
     total = len(st.session_state.coach_chat_history)
     recent_messages = st.session_state.coach_chat_history[-10:]
     for entry in reversed(recent_messages):
@@ -136,6 +149,7 @@ with right_col:
 
     st.divider()
 
+    # Summarize race countdown and current-week training volume.
     race_goal = api_get(f"/race-goal/{USER_ID}") or {}
     activities = api_get(f"/activities/{USER_ID}") or []
     days_until = "N/A"

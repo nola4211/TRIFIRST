@@ -1,3 +1,5 @@
+"""Training calendar page for scheduled workouts and synced activities."""
+
 from __future__ import annotations
 
 import calendar
@@ -21,20 +23,39 @@ USER_ID = st.session_state["user_id"]
 
 
 def api_get(path: str, params: dict | None = None):
+    """Send a GET request to the API and return decoded JSON.
+
+    Args:
+        path: API path beginning with a slash.
+        params: Optional query-string parameters.
+
+    Returns:
+        Decoded JSON payload from the API response.
+    """
     response = requests.get(f"{API_BASE_URL}{path}", params=params, timeout=20)
     response.raise_for_status()
     return response.json()
 
 
 def load_calendar(month_str: str) -> list[dict]:
+    """Load calendar entries for the selected month.
+
+    Args:
+        month_str: Month in YYYY-MM format.
+
+    Returns:
+        List of scheduled and completed workout entries.
+    """
     return api_get(f"/calendar/{USER_ID}", params={"month": month_str})
 
 
+# Initialize persistent calendar navigation state.
 if "selected_month" not in st.session_state:
     st.session_state.selected_month = date.today().replace(day=1)
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = date.today().isoformat()
 
+# Render month navigation controls.
 selected_month = st.session_state.selected_month
 month_str = selected_month.strftime("%Y-%m")
 
@@ -55,16 +76,19 @@ with nav3:
         st.session_state.selected_month = date(y, m, 1)
         st.rerun()
 
+# Load entries for the visible month with graceful API failure handling.
 try:
     entries = load_calendar(month_str)
 except requests.RequestException as exc:
     st.error(f"Could not load calendar: {exc}")
     entries = []
 
+# Group loaded entries by ISO date for calendar rendering.
 by_date: dict[str, list[dict]] = {}
 for item in entries:
     by_date.setdefault(item["date"], []).append(item)
 
+# Render a Monday-first calendar grid.
 cal = calendar.Calendar(firstweekday=0)
 for week in cal.monthdatescalendar(selected_month.year, selected_month.month):
     cols = st.columns(7)
@@ -87,6 +111,7 @@ for week in cal.monthdatescalendar(selected_month.year, selected_month.month):
                     st.markdown(f":blue[{emoji} {title}]")
 
 st.divider()
+# Show all workouts for the selected calendar day.
 selected_date = st.session_state.selected_date
 st.subheader(f"Details for {selected_date}")
 daily = by_date.get(selected_date, [])
@@ -103,19 +128,29 @@ for workout in daily:
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("Mark Complete", key=f"complete_{workout['id']}"):
-                    requests.patch(f"{API_BASE_URL}/calendar/workout/{workout['id']}", json={"status": "completed"}, timeout=20).raise_for_status()
-                    st.rerun()
+                    try:
+                        requests.patch(f"{API_BASE_URL}/calendar/workout/{workout['id']}", json={"status": "completed"}, timeout=20).raise_for_status()
+                        st.rerun()
+                    except requests.RequestException as exc:
+                        st.error(f"Could not update workout: {exc}")
             with c2:
                 if st.button("Mark Skipped", key=f"skip_{workout['id']}"):
-                    requests.patch(f"{API_BASE_URL}/calendar/workout/{workout['id']}", json={"status": "skipped"}, timeout=20).raise_for_status()
-                    st.rerun()
+                    try:
+                        requests.patch(f"{API_BASE_URL}/calendar/workout/{workout['id']}", json={"status": "skipped"}, timeout=20).raise_for_status()
+                        st.rerun()
+                    except requests.RequestException as exc:
+                        st.error(f"Could not update workout: {exc}")
             with c3:
                 if st.button("Delete", key=f"delete_{workout['id']}"):
-                    requests.delete(f"{API_BASE_URL}/calendar/workout/{workout['id']}", timeout=20).raise_for_status()
-                    st.rerun()
+                    try:
+                        requests.delete(f"{API_BASE_URL}/calendar/workout/{workout['id']}", timeout=20).raise_for_status()
+                        st.rerun()
+                    except requests.RequestException as exc:
+                        st.error(f"Could not delete workout: {exc}")
         elif status == "completed":
             st.success("✅ Completed via Strava")
 
+# Manual workout form writes directly to the API-backed schedule.
 with st.form("add_workout_form"):
     st.markdown("### Add Workout")
     w_date = st.date_input("Date", value=datetime.fromisoformat(selected_date).date())
@@ -126,24 +161,29 @@ with st.form("add_workout_form"):
     distance = st.number_input("Distance (km)", min_value=0.0, step=0.5)
     intensity = st.selectbox("Intensity", ["easy", "moderate", "hard", "race"])
     if st.form_submit_button("Add Workout"):
-        requests.post(
-            f"{API_BASE_URL}/calendar/workout",
-            json={
-                "user_id": USER_ID,
-                "date": w_date.isoformat(),
-                "activity_type": activity,
-                "title": title,
-                "description": description or None,
-                "duration_mins": int(duration) if duration else None,
-                "distance_km": float(distance) if distance else None,
-                "intensity": intensity,
-                "source": "manual",
-            },
-            timeout=20,
-        ).raise_for_status()
-        st.success("Workout added")
-        st.rerun()
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/calendar/workout",
+                json={
+                    "user_id": USER_ID,
+                    "date": w_date.isoformat(),
+                    "activity_type": activity,
+                    "title": title,
+                    "description": description or None,
+                    "duration_mins": int(duration) if duration else None,
+                    "distance_km": float(distance) if distance else None,
+                    "intensity": intensity,
+                    "source": "manual",
+                },
+                timeout=20,
+            )
+            response.raise_for_status()
+            st.success("Workout added")
+            st.rerun()
+        except requests.RequestException as exc:
+            st.error(f"Could not add workout: {exc}")
 
+# Load any Coach Tri proposal waiting for user confirmation.
 pending = None
 try:
     pending = api_get(f"/calendar/pending/{USER_ID}")
@@ -169,24 +209,34 @@ if pending:
     b1, b2 = st.columns(2)
     with b1:
         if st.button("✅ Confirm Selected"):
-            requests.post(
-                f"{API_BASE_URL}/calendar/confirm",
-                json={"user_id": USER_ID, "pending_id": pending["id"], "selected_ids": selected_ids},
-                timeout=20,
-            ).raise_for_status()
-            st.success("Workouts confirmed")
-            st.rerun()
+            try:
+                requests.post(
+                    f"{API_BASE_URL}/calendar/confirm",
+                    json={"user_id": USER_ID, "pending_id": pending["id"], "selected_ids": selected_ids},
+                    timeout=20,
+                ).raise_for_status()
+                st.success("Workouts confirmed")
+                st.rerun()
+            except requests.RequestException as exc:
+                st.error(f"Could not confirm workouts: {exc}")
     with b2:
         if st.button("❌ Dismiss All"):
-            requests.delete(f"{API_BASE_URL}/calendar/pending/{pending['id']}", timeout=20).raise_for_status()
-            st.info("Dismissed pending workouts")
-            st.rerun()
+            try:
+                requests.delete(f"{API_BASE_URL}/calendar/pending/{pending['id']}", timeout=20).raise_for_status()
+                st.info("Dismissed pending workouts")
+                st.rerun()
+            except requests.RequestException as exc:
+                st.error(f"Could not dismiss workouts: {exc}")
 
+# Sidebar actions use the shared sync and logout pattern.
 with st.sidebar:
     if st.button("🔄 Sync Strava", key="calendar_sync_strava"):
-        response = requests.post(f"{API_BASE_URL}/sync/strava", json={"user_id": USER_ID}, timeout=45)
-        response.raise_for_status()
-        st.success("Strava sync complete")
+        try:
+            response = requests.post(f"{API_BASE_URL}/sync/strava", json={"user_id": USER_ID}, timeout=45)
+            response.raise_for_status()
+            st.success("Strava sync complete")
+        except requests.RequestException as exc:
+            st.error(f"Could not sync Strava: {exc}")
     st.page_link("pages/2_Coach_Tri.py", label="💬 Ask Coach Tri to plan your week →")
     if st.button("🚪 Logout", key="calendar_logout"):
         for key in list(st.session_state.keys()):
