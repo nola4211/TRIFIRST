@@ -182,6 +182,14 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     "Use the athlete's name occasionally but not every message. "
     "End with a short direct question to keep the conversation going.\n\n"
 
+    "### CALENDAR INTEGRATION\n"
+    "You have a calendar feature. When the athlete asks for a training plan, schedule, "
+    "or what workouts to do this week, tell them you're putting together a plan and sending "
+    "it to their calendar for review. Say something like: 'I've put together a plan for you — "
+    "check your Calendar page to review and confirm the workouts.' "
+    "Never say you don't have calendar access — you do. "
+    "Never say you're text-based or can't schedule workouts.\n\n"
+
     "### HEART RATE ZONE SCIENCE\n"
     "Use Coggan's 5-zone model: Zone 1 (<68% max HR, recovery), Zone 2 (69-83%, aerobic base — "
     "the most important zone for triathlon, should be 80% of all training), Zone 3 (84-94%, tempo — "
