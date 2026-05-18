@@ -94,3 +94,30 @@ CREATE TABLE IF NOT EXISTS athlete_profile (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
+
+CREATE TABLE IF NOT EXISTS scheduled_workouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    date TEXT NOT NULL,
+    activity_type TEXT NOT NULL CHECK (activity_type IN ('swim', 'bike', 'run', 'brick', 'rest')),
+    title TEXT NOT NULL,
+    description TEXT,
+    duration_mins INTEGER,
+    distance_km REAL,
+    intensity TEXT CHECK (intensity IN ('easy', 'moderate', 'hard', 'race')),
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'skipped')),
+    source TEXT NOT NULL DEFAULT 'coach' CHECK (source IN ('coach', 'manual')),
+    confirmed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);
+
+CREATE TABLE IF NOT EXISTS pending_workouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    proposed_by TEXT NOT NULL DEFAULT 'coach',
+    workouts_json TEXT NOT NULL,
+    message TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);

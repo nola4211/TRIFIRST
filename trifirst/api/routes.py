@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from fastapi import APIRouter, HTTPException  # HTTPException returns a clean HTTP error response (like 404 or 400).
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel  # BaseModel validates request JSON and converts it into typed Python objects.
@@ -77,6 +78,34 @@ class DigestGenerateRequest(BaseModel):
     """Request body for generating a weekly digest."""
 
     user_id: int
+
+
+class ScheduledWorkoutRequest(BaseModel):
+    user_id: int
+    date: str
+    activity_type: str
+    title: str
+    description: str | None = None
+    duration_mins: int | None = None
+    distance_km: float | None = None
+    intensity: str | None = None
+    source: str = "manual"
+
+
+class WorkoutStatusUpdate(BaseModel):
+    status: str
+
+
+class PendingWorkoutsRequest(BaseModel):
+    user_id: int
+    workouts_json: str
+    message: str | None = None
+
+
+class ConfirmWorkoutsRequest(BaseModel):
+    user_id: int
+    pending_id: int
+    selected_ids: list[int]
 
 class RaceGoalRequest(BaseModel):
     """Request body for saving a race goal."""
@@ -491,3 +520,167 @@ def get_race_calculator(user_id: int) -> dict[str, object]:
         "avg_run_pace_per_km": _average(run_paces),
         "activity_counts": counts,
     }
+
+
+@router.get("/calendar/{user_id}")
+def get_calendar(user_id: int, month: str) -> list[dict[str, object]]:
+    """Return scheduled workouts and completed activities for a given month."""
+    month_prefix = f"{month}%"
+    with get_connection() as connection:
+        scheduled_rows = connection.execute(
+            """
+            SELECT id, user_id, date, activity_type, title, description, duration_mins,
+                   distance_km, intensity, status, source, confirmed_at, created_at
+            FROM scheduled_workouts
+            WHERE user_id = ? AND date LIKE ?
+            """,
+            (user_id, month_prefix),
+        ).fetchall()
+        activity_rows = connection.execute(
+            """
+            SELECT id, user_id, date, activity_type, duration_mins, distance_km, source
+            FROM activities
+            WHERE user_id = ? AND date LIKE ? AND source = 'strava'
+            """,
+            (user_id, month_prefix),
+        ).fetchall()
+
+    combined = [dict(row) | {"record_type": "scheduled_workout"} for row in scheduled_rows]
+    combined.extend(
+        {
+            "id": row["id"],
+            "user_id": row["user_id"],
+            "date": row["date"],
+            "activity_type": row["activity_type"],
+            "title": f"Completed {row['activity_type'].title()}",
+            "description": None,
+            "duration_mins": row["duration_mins"],
+            "distance_km": row["distance_km"],
+            "intensity": None,
+            "status": "completed",
+            "source": "strava",
+            "record_type": "activity",
+        }
+        for row in activity_rows
+    )
+    combined.sort(key=lambda item: item["date"])
+    return combined
+
+
+@router.post("/calendar/workout")
+def create_scheduled_workout(payload: ScheduledWorkoutRequest) -> dict[str, int | str]:
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO scheduled_workouts (
+                user_id, date, activity_type, title, description, duration_mins, distance_km, intensity, source
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.user_id,
+                payload.date,
+                payload.activity_type,
+                payload.title,
+                payload.description,
+                payload.duration_mins,
+                payload.distance_km,
+                payload.intensity,
+                payload.source,
+            ),
+        )
+        connection.commit()
+    return {"message": "Workout scheduled", "id": cursor.lastrowid}
+
+
+@router.patch("/calendar/workout/{workout_id}")
+def update_scheduled_workout(workout_id: int, payload: WorkoutStatusUpdate) -> dict[str, str]:
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE scheduled_workouts SET status = ? WHERE id = ?",
+            (payload.status, workout_id),
+        )
+        connection.commit()
+    return {"message": "Workout updated"}
+
+
+@router.delete("/calendar/workout/{workout_id}")
+def delete_scheduled_workout(workout_id: int) -> dict[str, str]:
+    with get_connection() as connection:
+        connection.execute("DELETE FROM scheduled_workouts WHERE id = ?", (workout_id,))
+        connection.commit()
+    return {"message": "Workout deleted"}
+
+
+@router.post("/calendar/pending")
+def save_pending_workouts(payload: PendingWorkoutsRequest) -> dict[str, int | str]:
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO pending_workouts (user_id, proposed_by, workouts_json, message)
+            VALUES (?, 'coach', ?, ?)
+            """,
+            (payload.user_id, payload.workouts_json, payload.message),
+        )
+        connection.commit()
+    return {"message": "Pending workouts saved", "id": cursor.lastrowid}
+
+
+@router.get("/calendar/pending/{user_id}")
+def get_pending_workouts(user_id: int) -> dict[str, object] | None:
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT id, user_id, proposed_by, workouts_json, message, created_at
+            FROM pending_workouts
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+@router.delete("/calendar/pending/{pending_id}")
+def delete_pending_workouts(pending_id: int) -> dict[str, str]:
+    with get_connection() as connection:
+        connection.execute("DELETE FROM pending_workouts WHERE id = ?", (pending_id,))
+        connection.commit()
+    return {"message": "Pending workouts deleted"}
+
+
+@router.post("/calendar/confirm")
+def confirm_pending_workouts(payload: ConfirmWorkoutsRequest) -> dict[str, int | str]:
+    with get_connection() as connection:
+        pending = connection.execute(
+            "SELECT workouts_json FROM pending_workouts WHERE id = ? AND user_id = ?",
+            (payload.pending_id, payload.user_id),
+        ).fetchone()
+        if not pending:
+            raise HTTPException(status_code=404, detail="Pending workouts not found")
+
+        workouts = json.loads(pending["workouts_json"])
+        selected = [w for w in workouts if int(w.get("id", -1)) in payload.selected_ids]
+        for workout in selected:
+            connection.execute(
+                """
+                INSERT INTO scheduled_workouts (
+                    user_id, date, activity_type, title, description, duration_mins, distance_km, intensity, source, confirmed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'coach', CURRENT_TIMESTAMP)
+                """,
+                (
+                    payload.user_id,
+                    workout.get("date"),
+                    workout.get("activity_type"),
+                    workout.get("title"),
+                    workout.get("description"),
+                    workout.get("duration_mins"),
+                    workout.get("distance_km"),
+                    workout.get("intensity"),
+                ),
+            )
+        connection.execute("DELETE FROM pending_workouts WHERE id = ?", (payload.pending_id,))
+        connection.commit()
+    return {"message": "Workouts confirmed", "count": len(selected)}
