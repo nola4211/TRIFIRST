@@ -358,21 +358,6 @@ if st.sidebar.button("🔄 Sync Strava", key="sync_strava_btn"):
     except requests.RequestException as exc:
         st.sidebar.error(f"Strava sync failed: {exc}")
 
-if st.sidebar.button("🔄 Sync Garmin", key="sync_garmin_btn"):
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/sync/garmin",
-            json={"user_id": USER_ID, "days": 7},
-            timeout=60,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        days_synced = payload.get("days_synced", 0)
-        st.sidebar.success(f"Garmin sync complete. {days_synced} days synced.")
-    except requests.RequestException as exc:
-        st.sidebar.error(f"Garmin sync failed: {exc}")
-
-
 st.sidebar.divider()
 if st.sidebar.button("🚪 Logout", key="logout_btn"):
     for key in list(st.session_state.keys()):

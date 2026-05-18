@@ -70,17 +70,6 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
     ).fetchall()
 
 
-    garmin_rows = db_conn.execute(
-        """
-        SELECT date, sleep_hours, body_battery_high, body_battery_low, resting_hr, avg_stress, hrv_status
-        FROM garmin_daily_stats
-        WHERE user_id = ?
-        ORDER BY date DESC, id DESC
-        LIMIT 7
-        """,
-        (user_id,),
-    ).fetchall()
-
     now_utc = datetime.now(timezone.utc)
     week_start = (now_utc - timedelta(days=now_utc.weekday())).date().isoformat()
     weekly_volume = db_conn.execute(
@@ -138,18 +127,6 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
             )
     else:
         lines.append("- No activities logged")
-
-    lines.append("Last 7 days Garmin recovery data:")
-    if garmin_rows:
-        for row in garmin_rows:
-            lines.append(
-                f"- {row['date']}: sleep_hours={row['sleep_hours']}, "
-                f"body_battery_high={row['body_battery_high']}, body_battery_low={row['body_battery_low']}, "
-                f"resting_hr={row['resting_hr']}, avg_stress={row['avg_stress']}, hrv_status={row['hrv_status']}"
-            )
-    else:
-        lines.append("Garmin data: not connected")
-
 
     lines.append(
         "Weekly volume summary (km): "
