@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from datetime import datetime, timedelta, timezone
 
 from groq import Groq
@@ -252,6 +253,21 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages)
     assistant_text = completion.choices[0].message.content or ""
 
+    lowered = message.lower()
+    plan_keywords = ["plan", "schedule", "week", "workouts", "calendar", "what should i do"]
+    if any(keyword in lowered for keyword in plan_keywords):
+        proposed = propose_workouts(user_id, message, db_conn)
+        if proposed:
+            pending_cursor = db_conn.execute(
+                """
+                INSERT INTO pending_workouts (user_id, proposed_by, workouts_json, message)
+                VALUES (?, 'coach', ?, ?)
+                """,
+                (user_id, json.dumps(proposed), message),
+            )
+            pending_id = pending_cursor.lastrowid
+            assistant_text = f"{assistant_text.rstrip()}\n\nPENDING_WORKOUTS_ID:{pending_id}"
+
     db_conn.execute(
         "INSERT INTO coach_messages (user_id, role, message) VALUES (?, 'user', ?)",
         (user_id, message),
@@ -263,6 +279,45 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     db_conn.commit()
 
     return assistant_text
+
+
+def propose_workouts(user_id: int, message: str, db_conn: sqlite3.Connection) -> list[dict[str, object]]:
+    """Generate a structured workout proposal list from Coach Tri."""
+    user_context = build_user_context(user_id, db_conn)
+    prompt = (
+        "You are Coach Tri. Build a 7-day triathlon training schedule using the athlete context and request. "
+        "Respond ONLY with a JSON array of workout objects with this exact schema:\n"
+        "[\n"
+        "  {\n"
+        '    "id": 1,\n'
+        '    "date": "YYYY-MM-DD",\n'
+        '    "activity_type": "swim|bike|run|brick|rest",\n'
+        '    "title": "short title",\n'
+        '    "description": "2-3 sentence coaching note",\n'
+        '    "duration_mins": 45,\n'
+        '    "distance_km": 8.0,\n'
+        '    "intensity": "easy|moderate|hard|race"\n'
+        "  }\n"
+        "]\n"
+        "Use null only for distance_km when unknown. Do not include markdown, explanation, or extra keys."
+    )
+
+    client = Groq(api_key=GROQ_API_KEY)
+    completion = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": f"Athlete context:\n{user_context}"},
+            {"role": "user", "content": f"{prompt}\nAthlete request: {message}"},
+        ],
+    )
+    content = (completion.choices[0].message.content or "").strip()
+    try:
+        parsed = json.loads(content)
+        if isinstance(parsed, list):
+            return parsed
+    except json.JSONDecodeError:
+        return []
+    return []
 
 
 def _most_recent_completed_week_window(today_utc: datetime | None = None) -> tuple[str, str]:

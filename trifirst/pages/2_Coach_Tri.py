@@ -17,6 +17,7 @@ if "user_id" not in st.session_state:
     st.stop()
 
 USER_ID = st.session_state["user_id"]
+pending_marker_notice = False
 
 
 def api_get(path: str):
@@ -67,6 +68,10 @@ with left_col:
                 )
                 response.raise_for_status()
                 coach_reply = response.json().get("response", "No response received.")
+                if "PENDING_WORKOUTS_ID:" in coach_reply:
+                    coach_reply, _ = coach_reply.rsplit("PENDING_WORKOUTS_ID:", 1)
+                    coach_reply = coach_reply.strip()
+                    pending_marker_notice = True
             except requests.RequestException as exc:
                 coach_reply = f"I couldn't reach the coach service: {exc}"
                 st.error(f"Chat request failed: {exc}")
@@ -84,6 +89,9 @@ with left_col:
 
     if total > 10:
         st.caption(f"Showing last 5 exchanges. {(total - 10) // 2} older exchanges not shown.")
+    if pending_marker_notice:
+        st.info("📅 Coach Tri has proposed workouts for your calendar")
+        st.page_link("pages/3_Calendar.py", label="Review & confirm on Calendar →")
 
 with right_col:
     st.subheader("📋 About You")
