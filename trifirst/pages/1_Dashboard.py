@@ -14,8 +14,10 @@ ACTIVITY_EMOJI = {"swim": "🏊", "bike": "🚴", "run": "🏃"}
 DISCIPLINE_COLORS = {"swim": "#1f77b4", "bike": "#ff7f0e", "run": "#d62728"}
 
 
+# Configure dashboard page metadata before rendering Streamlit widgets.
 st.set_page_config(layout="wide", page_title="TriFirst", page_icon="🏊")
 
+# Require an authenticated Streamlit session for dashboard access.
 if "user_id" not in st.session_state:
     st.warning("Please log in to access this page.")
     st.page_link("pages/0_Login.py", label="Go to Login →")
@@ -25,7 +27,14 @@ USER_ID = st.session_state["user_id"]
 
 
 def api_get(path: str):
-    """GET helper with graceful error handling."""
+    """Send a GET request to the API and return decoded JSON.
+
+    Args:
+        path: API path beginning with a slash.
+
+    Returns:
+        Decoded JSON payload, or None when the request fails.
+    """
     try:
         response = requests.get(f"{API_BASE_URL}{path}", timeout=15)
         response.raise_for_status()
@@ -39,6 +48,7 @@ def api_get(path: str):
 st.title("🏊🚴🏃 TriFirst")
 st.caption("Your personal Ironman training companion")
 
+# Profile expander lets athletes maintain race and fitness context.
 with st.expander("⚙️ My Profile", expanded=False):
     race_goal_payload = api_get(f"/race-goal/{USER_ID}")
     fitness_payload = api_get(f"/fitness-background/{USER_ID}")
@@ -301,6 +311,14 @@ else:
     total_mins = swim_mins + bike_mins + run_mins + transition_mins
 
     def fmt_hhmm(minutes: float) -> str:
+        """Format minutes as an H:MM duration string.
+
+        Args:
+            minutes: Duration in minutes.
+
+        Returns:
+            Duration formatted as hours and two-digit minutes.
+        """
         total = int(round(minutes))
         hours = total // 60
         mins = total % 60
@@ -344,6 +362,7 @@ st.sidebar.link_button(
     url=f"{API_BASE_URL}/auth/strava?user_id={USER_ID}",
 )
 
+# Sidebar actions use the shared sync and logout pattern.
 if st.sidebar.button("🔄 Sync Strava", key="sync_strava_btn"):
     try:
         response = requests.post(

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from trifirst.api.routes import router
-from trifirst.database.db import init_db
+from trifirst.database.db import check_db_health, init_db
 
 app = FastAPI(title="TriFirst API")
 
@@ -24,8 +24,16 @@ app.include_router(router)
 # This startup event runs once when the server boots so required tables exist.
 @app.on_event("startup")
 def on_startup() -> None:
-    """Initialize database schema at application startup."""
+    """Initialize database schema and verify required tables at startup.
+
+    Args:
+        None.
+
+    Returns:
+        None.
+    """
     init_db()
+    check_db_health()
 
 
 if __name__ == "__main__":
