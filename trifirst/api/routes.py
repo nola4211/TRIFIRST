@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import sqlite3
+import psycopg2
 from datetime import datetime
 from functools import wraps
 from typing import Any, Callable, Literal, TypeVar
@@ -71,7 +71,7 @@ def api_endpoint(func: F) -> F:
             raise
         except StravaIntegrationError as exc:
             raise HTTPException(status_code=502, detail=f"Strava operation failed: {exc}") from exc
-        except sqlite3.Error as exc:
+        except psycopg2.Error as exc:
             raise HTTPException(status_code=500, detail=f"Database operation failed: {exc}") from exc
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail="Stored workout proposal JSON is invalid") from exc
@@ -220,7 +220,7 @@ def register_user(payload: RegisterRequest) -> dict[str, int | str]:
     with get_connection() as connection:
         # Fetch any existing account that conflicts with the requested username or email.
         existing = connection.execute(
-            "SELECT id FROM users WHERE username = ? OR email = ?",
+            "SELECT id FROM users WHERE username = %s OR email = %s",
             (payload.username, str(payload.email)),
         ).fetchone()
         if existing:
@@ -231,7 +231,7 @@ def register_user(payload: RegisterRequest) -> dict[str, int | str]:
         cursor = connection.execute(
             """
             INSERT INTO users (name, email, username, password_hash, age)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (payload.name, str(payload.email), payload.username, password_hash, payload.age),
         )
@@ -254,7 +254,7 @@ def login_user(payload: LoginRequest) -> LoginResponse:
     with get_connection() as connection:
         # Fetch password hash and account fields for the submitted username.
         row = connection.execute(
-            "SELECT id, name, username, password_hash FROM users WHERE username = ?",
+            "SELECT id, name, username, password_hash FROM users WHERE username = %s",
             (payload.username,),
         ).fetchone()
 
@@ -277,7 +277,7 @@ def get_auth_user(user_id: int) -> dict[str, object]:
     """
     with get_connection() as connection:
         # Fetch public account details for the requested user.
-        row = connection.execute("SELECT name, username, email, age FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = connection.execute("SELECT name, username, email, age FROM users WHERE id = %s", (user_id,)).fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
@@ -372,7 +372,7 @@ def get_user_activities(user_id: int) -> list[dict[str, object]]:
             SELECT id, user_id, source, activity_type, date, duration_mins, distance_km, avg_hr,
                    perceived_effort, notes
             FROM activities
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY date DESC
             """,
             (user_id,),
@@ -396,7 +396,7 @@ def save_race_goal(payload: RaceGoalRequest) -> dict[str, str]:
         connection.execute(
             """
             INSERT INTO race_goals (user_id, race_name, race_date, race_distance, goal_finish_time)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (payload.user_id, payload.race_name, payload.race_date, payload.race_distance, payload.goal_finish_time),
         )
@@ -421,7 +421,7 @@ def get_race_goal(user_id: int) -> dict[str, object]:
             """
             SELECT user_id, race_name, race_date, race_distance, goal_finish_time
             FROM race_goals
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY id DESC
             LIMIT 1
             """,
@@ -448,7 +448,7 @@ def save_fitness_background(payload: FitnessBackgroundRequest) -> dict[str, str]
         connection.execute(
             """
             INSERT INTO fitness_background (user_id, swim_level, bike_level, run_level, weekly_hours_available)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (payload.user_id, payload.swim_level, payload.bike_level, payload.run_level, payload.weekly_hours_available),
         )
@@ -473,7 +473,7 @@ def get_fitness_background(user_id: int) -> dict[str, object]:
             """
             SELECT user_id, swim_level, bike_level, run_level, weekly_hours_available
             FROM fitness_background
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY id DESC
             LIMIT 1
             """,
@@ -502,13 +502,13 @@ def save_athlete_profile(payload: AthleteProfileRequest) -> dict[str, str]:
             INSERT INTO athlete_profile (
                 user_id, injury_history, physical_limitations, preferred_training_days, training_days_notes
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT(user_id) DO UPDATE SET
                 injury_history = excluded.injury_history,
                 physical_limitations = excluded.physical_limitations,
                 preferred_training_days = excluded.preferred_training_days,
                 training_days_notes = excluded.training_days_notes,
-                updated_at = CURRENT_TIMESTAMP
+                updated_at = NOW()
             """,
             (
                 payload.user_id,
@@ -539,7 +539,7 @@ def get_athlete_profile(user_id: int) -> dict[str, object]:
             """
             SELECT user_id, injury_history, physical_limitations, preferred_training_days, training_days_notes, updated_at
             FROM athlete_profile
-            WHERE user_id = ?
+            WHERE user_id = %s
             LIMIT 1
             """,
             (user_id,),
@@ -585,7 +585,7 @@ def get_coach_history(user_id: int) -> list[dict[str, object]]:
             FROM (
                 SELECT role, message, timestamp, id
                 FROM coach_messages
-                WHERE user_id = ?
+                WHERE user_id = %s
                 ORDER BY timestamp DESC, id DESC
                 LIMIT 10
             )
@@ -631,7 +631,7 @@ def get_weekly_digests(user_id: int) -> list[dict[str, object]]:
             SELECT id, user_id, week_start_date, total_swim_km, total_bike_km, total_run_km,
                    total_hours, ai_summary_text, generated_at
             FROM weekly_summaries
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY week_start_date DESC, id DESC
             LIMIT 4
             """,
@@ -658,11 +658,11 @@ def get_race_calculator(user_id: int) -> dict[str, object]:
             """
             SELECT activity_type, duration_mins, distance_km
             FROM activities
-            WHERE user_id = ?
+            WHERE user_id = %s
               AND activity_type IN ('swim', 'bike', 'run')
               AND distance_km > 0
               AND duration_mins > 0
-              AND date >= date('now', '-90 days')
+              AND date >= NOW() - INTERVAL '90 days'
             """,
             (user_id,),
         ).fetchall()
@@ -671,7 +671,7 @@ def get_race_calculator(user_id: int) -> dict[str, object]:
             """
             SELECT race_distance, race_name, race_date
             FROM race_goals
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY id DESC
             LIMIT 1
             """,
@@ -744,7 +744,7 @@ def get_calendar(user_id: int, month: str) -> list[dict[str, object]]:
             SELECT id, user_id, date, activity_type, title, description, duration_mins,
                    distance_km, intensity, status, source, confirmed_at, created_at
             FROM scheduled_workouts
-            WHERE user_id = ? AND date LIKE ?
+            WHERE user_id = %s AND date LIKE %s
             """,
             (user_id, month_prefix),
         ).fetchall()
@@ -753,7 +753,7 @@ def get_calendar(user_id: int, month: str) -> list[dict[str, object]]:
             """
             SELECT id, user_id, date, activity_type, duration_mins, distance_km, source
             FROM activities
-            WHERE user_id = ? AND date LIKE ? AND source = 'strava'
+            WHERE user_id = %s AND date LIKE %s AND source = 'strava'
             """,
             (user_id, month_prefix),
         ).fetchall()
@@ -798,7 +798,7 @@ def create_scheduled_workout(payload: ScheduledWorkoutRequest) -> dict[str, int 
             INSERT INTO scheduled_workouts (
                 user_id, date, activity_type, title, description, duration_mins, distance_km, intensity, source
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 payload.user_id,
@@ -830,7 +830,7 @@ def update_scheduled_workout(workout_id: int, payload: WorkoutStatusUpdate) -> d
     """
     with get_connection() as connection:
         # Update the status of a single scheduled workout by id.
-        cursor = connection.execute("UPDATE scheduled_workouts SET status = ? WHERE id = ?", (payload.status, workout_id))
+        cursor = connection.execute("UPDATE scheduled_workouts SET status = %s WHERE id = %s", (payload.status, workout_id))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Scheduled workout not found")
         connection.commit()
@@ -850,7 +850,7 @@ def delete_scheduled_workout(workout_id: int) -> dict[str, str]:
     """
     with get_connection() as connection:
         # Delete a single scheduled workout by id.
-        cursor = connection.execute("DELETE FROM scheduled_workouts WHERE id = ?", (workout_id,))
+        cursor = connection.execute("DELETE FROM scheduled_workouts WHERE id = %s", (workout_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Scheduled workout not found")
         connection.commit()
@@ -874,7 +874,7 @@ def save_pending_workouts(payload: PendingWorkoutsRequest) -> dict[str, int | st
         cursor = connection.execute(
             """
             INSERT INTO pending_workouts (user_id, proposed_by, workouts_json, message)
-            VALUES (?, 'coach', ?, ?)
+            VALUES (%s, 'coach', %s, %s)
             """,
             (payload.user_id, payload.workouts_json, payload.message),
         )
@@ -899,7 +899,7 @@ def get_pending_workouts(user_id: int) -> dict[str, object]:
             """
             SELECT id, user_id, proposed_by, workouts_json, message, created_at
             FROM pending_workouts
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY id DESC
             LIMIT 1
             """,
@@ -923,7 +923,7 @@ def delete_pending_workouts(pending_id: int) -> dict[str, str]:
     """
     with get_connection() as connection:
         # Delete a single pending workout proposal by id.
-        cursor = connection.execute("DELETE FROM pending_workouts WHERE id = ?", (pending_id,))
+        cursor = connection.execute("DELETE FROM pending_workouts WHERE id = %s", (pending_id,))
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Pending workouts not found")
         connection.commit()
@@ -944,7 +944,7 @@ def confirm_pending_workouts(payload: ConfirmWorkoutsRequest) -> dict[str, int |
     with get_connection() as connection:
         # Fetch the pending proposal before converting selected entries.
         pending = connection.execute(
-            "SELECT workouts_json FROM pending_workouts WHERE id = ? AND user_id = ?",
+            "SELECT workouts_json FROM pending_workouts WHERE id = %s AND user_id = %s",
             (payload.pending_id, payload.user_id),
         ).fetchone()
         if not pending:
@@ -959,7 +959,7 @@ def confirm_pending_workouts(payload: ConfirmWorkoutsRequest) -> dict[str, int |
                 INSERT INTO scheduled_workouts (
                     user_id, date, activity_type, title, description, duration_mins, distance_km, intensity, source, confirmed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'coach', CURRENT_TIMESTAMP)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'coach', NOW())
                 """,
                 (
                     payload.user_id,
@@ -973,6 +973,6 @@ def confirm_pending_workouts(payload: ConfirmWorkoutsRequest) -> dict[str, int |
                 ),
             )
         # Delete the pending proposal after selected entries are confirmed.
-        connection.execute("DELETE FROM pending_workouts WHERE id = ?", (payload.pending_id,))
+        connection.execute("DELETE FROM pending_workouts WHERE id = %s", (payload.pending_id,))
         connection.commit()
     return {"message": "Workouts confirmed", "count": len(selected)}

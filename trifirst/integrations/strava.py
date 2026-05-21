@@ -5,7 +5,6 @@ OAuth2 is a standard login flow that lets one app access another app's data with
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode
@@ -42,7 +41,7 @@ def authorize_url(client_id: str, state: str | None = None) -> str:
     }
     if state is not None:
         params["state"] = state
-    return f"{STRAVA_AUTHORIZE_URL}?{urlencode(params)}"
+    return f"{STRAVA_AUTHORIZE_URL}%s{urlencode(params)}"
 
 
 def _post_token(payload: dict[str, Any]) -> dict[str, Any]:
@@ -129,7 +128,7 @@ def refresh_access_token(
 
 
 # --- Token storage functions ---
-def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Connection) -> None:
+def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn) -> None:
     """Insert or update Strava tokens for a user.
 
     Args:
@@ -149,15 +148,15 @@ def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Conne
         )
 
     # Fetch an existing token row so we can update instead of duplicating tokens.
-    cursor = db_conn.execute("SELECT id FROM strava_tokens WHERE user_id = ?", (user_id,))
+    cursor = db_conn.execute("SELECT id FROM strava_tokens WHERE user_id = %s", (user_id,))
     row = cursor.fetchone()
     if row:
         # Update the existing Strava token row for this user.
         db_conn.execute(
             """
             UPDATE strava_tokens
-            SET access_token = ?, refresh_token = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?
+            SET access_token = %s, refresh_token = %s, expires_at = %s, updated_at = NOW()
+            WHERE user_id = %s
             """,
             (
                 token_dict["access_token"],
@@ -171,7 +170,7 @@ def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Conne
         db_conn.execute(
             """
             INSERT INTO strava_tokens (user_id, access_token, refresh_token, expires_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             """,
             (
                 user_id,
@@ -183,7 +182,7 @@ def save_tokens(user_id: int, token_dict: dict[str, Any], db_conn: sqlite3.Conne
     db_conn.commit()
 
 
-def load_tokens(user_id: int, db_conn: sqlite3.Connection) -> dict[str, Any] | None:
+def load_tokens(user_id: int, db_conn) -> dict[str, Any] | None:
     """Load Strava tokens for a user.
 
     Args:
@@ -199,7 +198,7 @@ def load_tokens(user_id: int, db_conn: sqlite3.Connection) -> dict[str, Any] | N
         """
         SELECT access_token, refresh_token, expires_at
         FROM strava_tokens
-        WHERE user_id = ?
+        WHERE user_id = %s
         """,
         (user_id,),
     ).fetchone()
@@ -216,7 +215,7 @@ def load_tokens(user_id: int, db_conn: sqlite3.Connection) -> dict[str, Any] | N
 
 def get_valid_token(
     user_id: int,
-    db_conn: sqlite3.Connection,
+    db_conn,
     client_id: str,
     client_secret: str,
 ) -> str:
@@ -359,7 +358,7 @@ def parse_activity(raw: dict[str, Any], user_id: int) -> dict[str, Any] | None:
 
 def sync_activities(
     user_id: int,
-    db_conn: sqlite3.Connection,
+    db_conn,
     client_id: str,
     client_secret: str,
 ) -> int:
@@ -392,7 +391,7 @@ def sync_activities(
             """
             SELECT 1
             FROM activities
-            WHERE user_id = ? AND date = ? AND activity_type = ? AND source = ?
+            WHERE user_id = %s AND date = %s AND activity_type = %s AND source = %s
             LIMIT 1
             """,
             (
@@ -418,7 +417,7 @@ def sync_activities(
                 distance_km,
                 avg_hr
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 parsed["user_id"],
