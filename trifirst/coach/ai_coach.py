@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -12,7 +11,7 @@ from trifirst.config import GROQ_API_KEY
 
 
 # Build a plain-text summary of the user's profile and training so the AI can give personalized advice.
-def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
+def build_user_context(user_id: int, db_conn) -> str:
     """Build a formatted training-context summary for a user from persisted data.
 
     Args:
@@ -24,7 +23,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
     """
     # Fetch the base user profile used to personalize prompts.
     user_row = db_conn.execute(
-        "SELECT name, age FROM users WHERE id = ?",
+        "SELECT name, age FROM users WHERE id = %s",
         (user_id,),
     ).fetchone()
 
@@ -33,7 +32,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         """
         SELECT race_name, race_date, race_distance
         FROM race_goals
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY race_date DESC, id DESC
         LIMIT 1
         """,
@@ -46,7 +45,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         """
         SELECT injury_history, physical_limitations, preferred_training_days, training_days_notes
         FROM athlete_profile
-        WHERE user_id = ?
+        WHERE user_id = %s
         LIMIT 1
         """,
         (user_id,),
@@ -57,7 +56,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         """
         SELECT swim_level, bike_level, run_level, weekly_hours_available
         FROM fitness_background
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY id DESC
         LIMIT 1
         """,
@@ -69,7 +68,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
         """
         SELECT date, activity_type, distance_km, duration_mins, avg_hr
         FROM activities
-        WHERE user_id = ? AND date >= date('now', '-30 day')
+        WHERE user_id = %s AND date >= NOW() - INTERVAL '30 days'
         ORDER BY date DESC, id DESC
         """,
         (user_id,),
@@ -86,7 +85,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
             COALESCE(SUM(CASE WHEN activity_type = 'bike' THEN distance_km ELSE 0 END), 0) AS bike_km,
             COALESCE(SUM(CASE WHEN activity_type = 'run' THEN distance_km ELSE 0 END), 0) AS run_km
         FROM activities
-        WHERE user_id = ? AND date >= ?
+        WHERE user_id = %s AND date >= %s
         """,
         (user_id, week_start),
     ).fetchone()
@@ -143,7 +142,7 @@ def build_user_context(user_id: int, db_conn: sqlite3.Connection) -> str:
     return "\n".join(lines)
 
 
-def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
+def chat(user_id: int, message: str, db_conn) -> str:
     """Generate and persist an AI coaching response for a user message.
 
     Args:
@@ -161,7 +160,7 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
         FROM (
             SELECT role, message, timestamp, id
             FROM coach_messages
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY timestamp DESC, id DESC
             LIMIT 20
         )
@@ -277,7 +276,7 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
             pending_cursor = db_conn.execute(
                 """
                 INSERT INTO pending_workouts (user_id, proposed_by, workouts_json, message)
-                VALUES (?, 'coach', ?, ?)
+                VALUES (%s, 'coach', %s, %s)
                 """,
                 (user_id, json.dumps(proposed), message),
             )
@@ -286,12 +285,12 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
 
     # Persist the user chat message in the conversation history.
     db_conn.execute(
-        "INSERT INTO coach_messages (user_id, role, message) VALUES (?, 'user', ?)",
+        "INSERT INTO coach_messages (user_id, role, message) VALUES (%s, 'user', %s)",
         (user_id, message),
     )
     # Persist the assistant response in the conversation history.
     db_conn.execute(
-        "INSERT INTO coach_messages (user_id, role, message) VALUES (?, 'assistant', ?)",
+        "INSERT INTO coach_messages (user_id, role, message) VALUES (%s, 'assistant', %s)",
         (user_id, assistant_text),
     )
     db_conn.commit()
@@ -299,7 +298,7 @@ def chat(user_id: int, message: str, db_conn: sqlite3.Connection) -> str:
     return assistant_text
 
 
-def propose_workouts(user_id: int, message: str, db_conn: sqlite3.Connection) -> list[dict[str, object]]:
+def propose_workouts(user_id: int, message: str, db_conn) -> list[dict[str, object]]:
     """Generate a structured workout proposal list from Coach Tri.
 
     Args:
@@ -363,7 +362,7 @@ def _most_recent_completed_week_window(today_utc: datetime | None = None) -> tup
     return week_start.isoformat(), week_end.isoformat()
 
 
-def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
+def generate_weekly_digest(user_id: int, db_conn) -> str:
     """Generate and persist an AI weekly digest for the most recent completed week.
 
     Args:
@@ -376,7 +375,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
     week_start, week_end = _most_recent_completed_week_window()
 
     # Fetch the athlete name used in the generated weekly digest.
-    user_row = db_conn.execute("SELECT name FROM users WHERE id = ?", (user_id,)).fetchone()
+    user_row = db_conn.execute("SELECT name FROM users WHERE id = %s", (user_id,)).fetchone()
     athlete_name = user_row["name"] if user_row and user_row["name"] else "Athlete"
 
     # Fetch aggregate swim, bike, and run totals for the completed week.
@@ -388,7 +387,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
             COALESCE(SUM(duration_mins), 0) / 60.0 AS total_hours,
             COUNT(*) AS session_count
         FROM activities
-        WHERE user_id = ? AND date BETWEEN ? AND ?
+        WHERE user_id = %s AND date BETWEEN %s AND %s
         GROUP BY activity_type
         """,
         (user_id, week_start, week_end),
@@ -414,7 +413,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
         """
         SELECT race_name, race_date, race_distance
         FROM race_goals
-        WHERE user_id = ?
+        WHERE user_id = %s
         ORDER BY race_date ASC, id DESC
         LIMIT 1
         """,
@@ -481,7 +480,7 @@ def generate_weekly_digest(user_id: int, db_conn: sqlite3.Connection) -> str:
             total_hours,
             ai_summary_text
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
         (user_id, week_start, swim_km, bike_km, run_km, total_hours, ai_summary_text),
     )

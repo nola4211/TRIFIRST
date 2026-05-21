@@ -16,12 +16,14 @@ logger = logging.getLogger(__name__)
 APP_NAME = os.getenv("APP_NAME", "TriFirst")
 ENV = os.getenv("ENV", "development")
 DATABASE_PATH = os.getenv("DATABASE_PATH", "trifirst.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 STRAVA_CLIENT_ID = os.getenv("STRAVA_CLIENT_ID", "")
 STRAVA_CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET", "")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # Critical settings that should be present for production features to work.
 CRITICAL_ENV_VARS = {
+    "DATABASE_URL": DATABASE_URL or DATABASE_PATH,
     "DATABASE_PATH": DATABASE_PATH,
     "STRAVA_CLIENT_ID": STRAVA_CLIENT_ID,
     "STRAVA_CLIENT_SECRET": STRAVA_CLIENT_SECRET,
