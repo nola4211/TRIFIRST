@@ -12,10 +12,25 @@ export default function Login() {
   const submit = async (e) => {
     e.preventDefault(); setError(''); setLoading(true)
     try {
-      const res = tab === 'login' ? await login({ username: form.username, password: form.password }) : await register(form)
-      localStorage.setItem('user', JSON.stringify(res.data.user || res.data))
+      const res = tab === 'login' 
+        ? await login({ username: form.username, password: form.password }) 
+        : await register({ 
+            name: form.name, 
+            email: form.email, 
+            username: form.username, 
+            password: form.password,
+            age: form.age ? parseInt(form.age) : null
+          })
+      localStorage.setItem('trifirst_user', JSON.stringify(res.data.user || res.data))
       navigate('/dashboard')
-    } catch (err) { setError(err.response?.data?.detail || 'Request failed') }
+    } catch (err) { 
+      const detail = err.response?.data?.detail
+      if (Array.isArray(detail)) {
+        setError(detail.map(d => d.msg).join(', '))
+      } else {
+        setError(typeof detail === 'string' ? detail : 'Request failed')
+      }
+    }
     finally { setLoading(false) }
   }
 

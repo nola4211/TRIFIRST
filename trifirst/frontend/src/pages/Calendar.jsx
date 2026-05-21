@@ -24,11 +24,13 @@ export default function Calendar() {
     if (!userId) return
     setLoading(true)
     try {
-      const [calRes, pendRes] = await Promise.all([
-        getCalendar(userId, monthStr),
-        getPendingWorkouts(userId),
-      ])
+      const calRes = await getCalendar(userId, monthStr)
       setWorkouts(calRes.data || [])
+    } catch {
+      setError('Failed to load calendar')
+    }
+    try {
+      const pendRes = await getPendingWorkouts(userId)
       const p = pendRes.data
       if (p && p.id) {
         const parsed = JSON.parse(p.workouts_json || '[]')
@@ -38,7 +40,7 @@ export default function Calendar() {
         setPending(null)
       }
     } catch {
-      setError('Failed to load calendar')
+      setPending(null)
     } finally {
       setLoading(false)
     }
@@ -58,9 +60,10 @@ export default function Calendar() {
   const workoutsByDate = useMemo(() => {
     const map = {}
     workouts.forEach(w => {
-      const d = new Date(w.date).getDate()
-      if (!map[d]) map[d] = []
-      map[d].push(w)
+      // Split date string directly to avoid timezone offset issues
+      const day = parseInt(w.date.split('-')[2], 10)
+      if (!map[day]) map[day] = []
+      map[day].push(w)
     })
     return map
   }, [workouts])

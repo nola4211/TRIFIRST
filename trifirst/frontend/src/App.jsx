@@ -5,7 +5,7 @@ import CoachTri from './pages/CoachTri'
 import Calendar from './pages/Calendar'
 
 function ProtectedRoute({ children }) {
-  const user = localStorage.getItem('user')
+  const user = localStorage.getItem("trifirst_user")
   if (!user) return <Navigate to="/" replace />
   return children
 }
